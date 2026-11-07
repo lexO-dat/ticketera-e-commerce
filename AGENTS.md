@@ -178,6 +178,10 @@ docs/
   architecture/  adr/  services/
 ```
 
+Estado (Fase 1 completa): existen `packages/commons`, `packages/contracts`, `services/template` e
+`infra/`. Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
+Comandos y servicios locales: [`README.md`](README.md).
+
 Mientras dure la migración, la app actual sigue en `src/`. Se migra con patrón **strangler**: cada
 server function de `src/lib/*.functions.ts` pasa a llamar al gateway en vez de a Supabase, dominio por
 dominio, y al final se elimina `@supabase/supabase-js` y la carpeta `supabase/`.
@@ -216,7 +220,11 @@ dominio, y al final se elimina `@supabase/supabase-js` y la carpeta `supabase/`.
 - TypeScript `strict`. Tests con **Vitest**: unitarios del dominio e integración contra Postgres/Redis
   reales (docker compose). Los casos de concurrencia (sobreventa, doble cobro, idempotencia) son obligatorios.
 - Cada servicio: `README.md` corto, `Dockerfile`, migraciones versionadas, `.env.example`.
-- Antes de commitear: `lint`, `typecheck`, `test` y `build` del paquete tocado.
+- Antes de commitear: `lint`, `typecheck`, `test` y `build` del paquete tocado
+  (`npm run lint:backend`, `npm run typecheck`, `npm test`, `npm run build:backend`).
+- Pruebas de integración: `npm run infra:up` y las variables `TEST_DATABASE_URL`, `TEST_REDIS_URL`,
+  `TEST_AMQP_URL` (ver `packages/commons/README.md`). Sin ellas se omiten; en CI siempre corren.
+- Toda librería del backend usa `zod` 4; la web (`src/`) sigue en `zod` 3 hasta migrarla.
 
 ## 9. Convenciones de git
 

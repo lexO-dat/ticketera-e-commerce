@@ -20,10 +20,11 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 
 ## Fase 1 — Monorepo e infraestructura
 
-- [ ] Workspaces: `apps/`, `services/`, `packages/`, `tools/`, `infra/`
-- [ ] `infra/docker-compose.yml`: Postgres primaria+réplica, Redis+réplica, RabbitMQ, Mailpit, Nginx TLS 1.3
-- [ ] `@shared/commons` (logger, errores, `ItemVendible`, cliente de eventos, outbox) y `packages/contracts`
-- [ ] Plantilla de servicio (Fastify, health checks, migraciones, Dockerfile, tests) y CI
+- [x] Workspaces npm: `packages/`, `services/`, `tools/` (la web sigue en `src/` hasta el corte final)
+- [x] `infra/docker-compose.yml`: Postgres primaria + réplica síncrona, Redis + réplica, RabbitMQ, Mailpit, Nginx TLS 1.3
+- [x] `@shared/commons` (logger, errores, `ItemVendible`, CLP, BD/outbox/inbox, bus de eventos, locks) y `packages/contracts` (OpenAPI 3.1, AsyncAPI 3)
+- [x] Plantilla de servicio (Fastify, health checks, migraciones, outbox, Dockerfile, tests), `npm run new:service` y CI (GitHub Actions)
+- [ ] Failover automático de Postgres/Redis (Patroni / Sentinel): se aborda en la Fase 8
 
 ## Fase 2 — identity + gateway (reemplaza Supabase Auth y RLS)
 
