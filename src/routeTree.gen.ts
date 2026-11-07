@@ -18,6 +18,8 @@ import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as ContactoRouteImport } from './routes/contacto'
 import { Route as EventosRouteImport } from './routes/eventos'
 import { Route as MiCuentaRouteImport } from './routes/mi-cuenta'
+import { Route as RestablecerContrasenaRouteImport } from './routes/restablecer-contrasena'
+import { Route as VerificarEmailRouteImport } from './routes/verificar-email'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminEquipoRouteImport } from './routes/admin.equipo'
 import { Route as AdminEventosRouteImport } from './routes/admin.eventos'
@@ -72,6 +74,16 @@ const EventosRoute = EventosRouteImport.update({
 const MiCuentaRoute = MiCuentaRouteImport.update({
   id: '/mi-cuenta',
   path: '/mi-cuenta',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RestablecerContrasenaRoute = RestablecerContrasenaRouteImport.update({
+  id: '/restablecer-contrasena',
+  path: '/restablecer-contrasena',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerificarEmailRoute = VerificarEmailRouteImport.update({
+  id: '/verificar-email',
+  path: '/verificar-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -135,6 +147,8 @@ export interface FileRoutesByFullPath {
   '/contacto': typeof ContactoRoute
   '/eventos': typeof EventosRoute
   '/mi-cuenta': typeof MiCuentaRoute
+  '/restablecer-contrasena': typeof RestablecerContrasenaRoute
+  '/verificar-email': typeof VerificarEmailRoute
   '/admin/equipo': typeof AdminEquipoRoute
   '/admin/eventos': typeof AdminEventosRoute
   '/admin/ordenes': typeof AdminOrdenesRoute
@@ -155,6 +169,8 @@ export interface FileRoutesByTo {
   '/contacto': typeof ContactoRoute
   '/eventos': typeof EventosRoute
   '/mi-cuenta': typeof MiCuentaRoute
+  '/restablecer-contrasena': typeof RestablecerContrasenaRoute
+  '/verificar-email': typeof VerificarEmailRoute
   '/admin/equipo': typeof AdminEquipoRoute
   '/admin/eventos': typeof AdminEventosRoute
   '/admin/ordenes': typeof AdminOrdenesRoute
@@ -177,6 +193,8 @@ export interface FileRoutesById {
   '/contacto': typeof ContactoRoute
   '/eventos': typeof EventosRoute
   '/mi-cuenta': typeof MiCuentaRoute
+  '/restablecer-contrasena': typeof RestablecerContrasenaRoute
+  '/verificar-email': typeof VerificarEmailRoute
   '/admin/equipo': typeof AdminEquipoRoute
   '/admin/eventos': typeof AdminEventosRoute
   '/admin/ordenes': typeof AdminOrdenesRoute
@@ -200,6 +218,8 @@ export interface FileRouteTypes {
     | '/contacto'
     | '/eventos'
     | '/mi-cuenta'
+    | '/restablecer-contrasena'
+    | '/verificar-email'
     | '/admin/equipo'
     | '/admin/eventos'
     | '/admin/ordenes'
@@ -220,6 +240,8 @@ export interface FileRouteTypes {
     | '/contacto'
     | '/eventos'
     | '/mi-cuenta'
+    | '/restablecer-contrasena'
+    | '/verificar-email'
     | '/admin/equipo'
     | '/admin/eventos'
     | '/admin/ordenes'
@@ -241,6 +263,8 @@ export interface FileRouteTypes {
     | '/contacto'
     | '/eventos'
     | '/mi-cuenta'
+    | '/restablecer-contrasena'
+    | '/verificar-email'
     | '/admin/equipo'
     | '/admin/eventos'
     | '/admin/ordenes'
@@ -263,6 +287,8 @@ export interface RootRouteChildren {
   ContactoRoute: typeof ContactoRoute
   EventosRoute: typeof EventosRoute
   MiCuentaRoute: typeof MiCuentaRoute
+  RestablecerContrasenaRoute: typeof RestablecerContrasenaRoute
+  VerificarEmailRoute: typeof VerificarEmailRoute
   ComprarDateIdRoute: typeof ComprarDateIdRoute
   EventoSlugRoute: typeof EventoSlugRoute
   OrdenCodeRoute: typeof OrdenCodeRoute
@@ -332,6 +358,20 @@ declare module '@tanstack/react-router' {
       path: '/mi-cuenta'
       fullPath: '/mi-cuenta'
       preLoaderRoute: typeof MiCuentaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/restablecer-contrasena': {
+      id: '/restablecer-contrasena'
+      path: '/restablecer-contrasena'
+      fullPath: '/restablecer-contrasena'
+      preLoaderRoute: typeof RestablecerContrasenaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verificar-email': {
+      id: '/verificar-email'
+      path: '/verificar-email'
+      fullPath: '/verificar-email'
+      preLoaderRoute: typeof VerificarEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -437,6 +477,8 @@ const rootRouteChildren: RootRouteChildren = {
   ContactoRoute: ContactoRoute,
   EventosRoute: EventosRoute,
   MiCuentaRoute: MiCuentaRoute,
+  RestablecerContrasenaRoute: RestablecerContrasenaRoute,
+  VerificarEmailRoute: VerificarEmailRoute,
   ComprarDateIdRoute: ComprarDateIdRoute,
   EventoSlugRoute: EventoSlugRoute,
   OrdenCodeRoute: OrdenCodeRoute,

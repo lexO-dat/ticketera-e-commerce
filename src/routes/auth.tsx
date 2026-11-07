@@ -6,11 +6,12 @@ import { PublicLayout } from "@/components/site/PublicLayout";
 import { Caption, DisplayHeading, Hairline, MetaText } from "@/components/kit/Text";
 import { PillButton } from "@/components/kit/PillButton";
 import { Field, TextInput } from "@/components/kit/Field";
-import { supabase } from "@/integrations/supabase/client";
+import { requestPasswordReset, signIn, signUp, type PublicSessionUser } from "@/lib/auth.functions";
+import { refreshAuth } from "@/lib/useAuth";
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
-  mode: z.enum(["login", "signup"]).optional(),
+  mode: z.enum(["login", "signup", "forgot"]).optional(),
 });
 
 export const Route = createFileRoute("/auth")({
@@ -39,22 +40,14 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const [mode, setMode] = useState<"login" | "signup">(search.mode ?? "login");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">(search.mode ?? "login");
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  async function land() {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) return;
-    const { data: role } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", data.user.id)
-      .eq("role", "admin")
-      .maybeSingle();
-    if (role) {
+  function land(user: PublicSessionUser) {
+    if (user.isAdmin) {
       void navigate({ to: "/admin" });
       return;
     }
@@ -66,8 +59,8 @@ function AuthPage() {
   }
 
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => {
-      if (data.session) void land();
+    void refreshAuth().then((state) => {
+      if (state.session) land(state.session.user);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -77,53 +70,41 @@ function AuthPage() {
     setBusy(true);
     setError(null);
     setNotice(null);
-
-    if (mode === "signup") {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: form.email.trim(),
-        password: form.password,
-        options: {
-          emailRedirectTo: window.location.origin,
-          data: { full_name: form.name.trim() },
-        },
-      });
-      if (signUpError) {
-        setBusy(false);
-        setError(signUpError.message);
+    try {
+      if (mode === "forgot") {
+        await requestPasswordReset({ data: { email: form.email.trim() } });
+        setNotice(
+          "Si existe una cuenta con ese email, te enviamos un enlace para restablecer la contraseña.",
+        );
         return;
       }
-      if (!data.session) {
-        setBusy(false);
-        setNotice("Revisa tu correo para confirmar la cuenta y luego inicia sesión.");
-        return;
+      if (mode === "signup") {
+        await signUp({
+          data: { email: form.email.trim(), password: form.password, fullName: form.name.trim() },
+        });
       }
-      await supabase
-        .from("profiles")
-        .upsert({ id: data.session.user.id, full_name: form.name.trim() });
+      const user = await signIn({ data: { email: form.email.trim(), password: form.password } });
+      await refreshAuth();
+      land(user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo completar la solicitud.");
+    } finally {
       setBusy(false);
-      void land();
-      return;
     }
-
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: form.email.trim(),
-      password: form.password,
-    });
-    setBusy(false);
-    if (signInError) {
-      setError("Credenciales inválidas. Verifica tu email y contraseña.");
-      return;
-    }
-    void land();
   }
+
+  const title =
+    mode === "login"
+      ? "Iniciar sesión"
+      : mode === "signup"
+        ? "Crear cuenta"
+        : "Recuperar contraseña";
 
   return (
     <PublicLayout>
       <div className="mx-auto max-w-[520px] px-5 py-20 md:px-8 md:py-28">
         <Caption className="text-graphite">Tu cuenta</Caption>
-        <DisplayHeading className="mt-4">
-          {mode === "login" ? "Iniciar sesión" : "Crear cuenta"}
-        </DisplayHeading>
+        <DisplayHeading className="mt-4">{title}</DisplayHeading>
         <MetaText className="mt-4">
           Necesitas una cuenta para comprar tickets y para acceder a tus entradas digitales, eventos
           próximos e historial de compras.
@@ -148,14 +129,21 @@ function AuthPage() {
               autoComplete="email"
             />
           </Field>
-          <Field label="Contraseña">
-            <TextInput
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-            />
-          </Field>
+          {mode !== "forgot" ? (
+            <Field label="Contraseña">
+              <TextInput
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+              />
+            </Field>
+          ) : null}
+          {mode === "signup" ? (
+            <MetaText>
+              Usa al menos 10 caracteres; una frase fácil de recordar funciona bien.
+            </MetaText>
+          ) : null}
           {error ? (
             <p role="alert" className="text-body text-ember">
               {error}
@@ -163,7 +151,13 @@ function AuthPage() {
           ) : null}
           {notice ? <MetaText>{notice}</MetaText> : null}
           <PillButton type="submit" disabled={busy}>
-            {busy ? "Procesando…" : mode === "login" ? "Ingresar" : "Crear mi cuenta"}
+            {busy
+              ? "Procesando…"
+              : mode === "login"
+                ? "Ingresar"
+                : mode === "signup"
+                  ? "Crear mi cuenta"
+                  : "Enviar enlace"}
           </PillButton>
         </form>
 
@@ -179,6 +173,19 @@ function AuthPage() {
         >
           {mode === "login" ? "No tengo cuenta, quiero registrarme" : "Ya tengo cuenta, ingresar"}
         </button>
+        {mode === "login" ? (
+          <button
+            type="button"
+            className="mt-4 block text-body text-graphite underline underline-offset-4"
+            onClick={() => {
+              setError(null);
+              setNotice(null);
+              setMode("forgot");
+            }}
+          >
+            Olvidé mi contraseña
+          </button>
+        ) : null}
         <MetaText className="mt-6">
           El equipo interno usa este mismo acceso y entra directo al{" "}
           <Link to="/admin" className="underline">

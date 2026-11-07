@@ -1,53 +1,54 @@
 import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
 
-import { supabase } from "@/integrations/supabase/client";
+import { currentUser, type PublicSessionUser } from "@/lib/auth.functions";
+
+export type AuthSession = { user: PublicSessionUser };
 
 export type AuthState = {
   loading: boolean;
-  session: Session | null;
+  session: AuthSession | null;
   isAdmin: boolean;
 };
 
-/** Sesión reactiva del cliente + flag de rol admin (leído de user_roles). */
+// Estado compartido entre componentes: una sola consulta y notificación tras login/logout.
+let cached: AuthState | undefined;
+let inflight: Promise<AuthState> | undefined;
+const listeners = new Set<(state: AuthState) => void>();
+
+function load(): Promise<AuthState> {
+  inflight ??= currentUser()
+    .then((user) => ({
+      loading: false,
+      session: user ? { user } : null,
+      isAdmin: Boolean(user?.isAdmin),
+    }))
+    .catch(() => ({ loading: false, session: null, isAdmin: false }))
+    .then((state) => {
+      cached = state;
+      inflight = undefined;
+      for (const listener of listeners) listener(state);
+      return state;
+    });
+  return inflight;
+}
+
+/** Vuelve a consultar la sesión (llamar después de iniciar o cerrar sesión). */
+export function refreshAuth(): Promise<AuthState> {
+  cached = undefined;
+  return load();
+}
+
+/** Sesión reactiva del cliente (identity vía BFF) + flag de rol admin. */
 export function useAuth(): AuthState {
-  const [state, setState] = useState<AuthState>({
-    loading: true,
-    session: null,
-    isAdmin: false,
-  });
+  const [state, setState] = useState<AuthState>(
+    cached ?? { loading: true, session: null, isAdmin: false },
+  );
 
   useEffect(() => {
-    let alive = true;
-
-    async function resolveRole(session: Session | null) {
-      if (!session) return false;
-      const { data } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", session.user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-      return Boolean(data);
-    }
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!alive) return;
-      setState({ loading: false, session, isAdmin: false });
-      void resolveRole(session).then((isAdmin) => {
-        if (alive) setState({ loading: false, session, isAdmin });
-      });
-    });
-
-    void supabase.auth.getSession().then(async ({ data }) => {
-      if (!alive) return;
-      const isAdmin = await resolveRole(data.session);
-      if (alive) setState({ loading: false, session: data.session, isAdmin });
-    });
-
+    listeners.add(setState);
+    if (!cached) void load();
     return () => {
-      alive = false;
-      sub.subscription.unsubscribe();
+      listeners.delete(setState);
     };
   }, []);
 

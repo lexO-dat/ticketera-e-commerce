@@ -1,13 +1,9 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-
-/** Verifica el rol admin usando el cliente autenticado (RLS del usuario). */
-export async function assertAdmin(supabase: SupabaseClient, userId: string) {
-  const { data, error } = await supabase.rpc("has_role", {
-    _user_id: userId,
-    _role: "admin",
-  });
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden");
+/**
+ * Verifica el rol admin con los roles del token de identity (ya verificado por `requireAuth`).
+ * Reemplaza a `has_role` + RLS de Supabase.
+ */
+export function assertAdmin(roles: readonly string[]) {
+  if (!roles.includes("admin")) throw new Error("Forbidden");
   return true;
 }
 

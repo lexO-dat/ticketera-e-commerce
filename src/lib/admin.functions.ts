@@ -1,13 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/auth/middleware";
 
 export const adminOverview = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
 
@@ -87,10 +87,10 @@ export const adminOverview = createServerFn({ method: "GET" })
   });
 
 export const adminEvents = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { data, error } = await db
@@ -107,7 +107,7 @@ export const adminEvents = createServerFn({ method: "GET" })
   });
 
 export const adminSaveEvent = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z
       .object({
@@ -126,7 +126,7 @@ export const adminSaveEvent = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin, slugify } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
 
@@ -160,11 +160,11 @@ export const adminSaveEvent = createServerFn({ method: "POST" })
   });
 
 export const adminDeleteEvent = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { error } = await db.from("events").delete().eq("id", data.id);
@@ -173,7 +173,7 @@ export const adminDeleteEvent = createServerFn({ method: "POST" })
   });
 
 export const adminSaveQueue = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z
       .object({
@@ -188,7 +188,7 @@ export const adminSaveQueue = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { error } = await db.from("queue_config").upsert(
@@ -207,11 +207,11 @@ export const adminSaveQueue = createServerFn({ method: "POST" })
   });
 
 export const adminResetQueue = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) => z.object({ eventId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     await db.from("queue_sessions").delete().eq("event_id", data.eventId);
@@ -219,7 +219,7 @@ export const adminResetQueue = createServerFn({ method: "POST" })
   });
 
 export const adminSaveDate = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z
       .object({
@@ -245,7 +245,7 @@ export const adminSaveDate = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
 
@@ -294,11 +294,11 @@ export const adminSaveDate = createServerFn({ method: "POST" })
   });
 
 export const adminDeleteDate = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { error } = await db.from("event_dates").delete().eq("id", data.id);
@@ -307,10 +307,10 @@ export const adminDeleteDate = createServerFn({ method: "POST" })
   });
 
 export const adminVenues = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { data, error } = await db
@@ -325,7 +325,7 @@ export const adminVenues = createServerFn({ method: "GET" })
   });
 
 export const adminSaveVenue = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z
       .object({
@@ -339,7 +339,7 @@ export const adminSaveVenue = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const payload = {
@@ -359,7 +359,7 @@ export const adminSaveVenue = createServerFn({ method: "POST" })
   });
 
 export const adminSaveSection = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z
       .object({
@@ -380,7 +380,7 @@ export const adminSaveSection = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin, seatGrid } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
 
@@ -429,11 +429,11 @@ export const adminSaveSection = createServerFn({ method: "POST" })
   });
 
 export const adminDeleteSection = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { error } = await db.from("venue_sections").delete().eq("id", data.id);
@@ -442,13 +442,13 @@ export const adminDeleteSection = createServerFn({ method: "POST" })
   });
 
 export const adminToggleSeat = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z.object({ seatId: z.string().uuid(), blocked: z.boolean() }).parse(input),
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { error } = await db
@@ -460,10 +460,10 @@ export const adminToggleSeat = createServerFn({ method: "POST" })
   });
 
 export const adminOrders = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { data, error } = await db
@@ -482,7 +482,7 @@ export const adminOrders = createServerFn({ method: "GET" })
   });
 
 export const adminUpdateOrderStatus = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z
       .object({
@@ -493,7 +493,7 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { error } = await db.from("orders").update({ status: data.status }).eq("id", data.id);
@@ -502,10 +502,10 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" })
   });
 
 export const adminPromos = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { data, error } = await db
@@ -517,7 +517,7 @@ export const adminPromos = createServerFn({ method: "GET" })
   });
 
 export const adminSavePromo = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z
       .object({
@@ -532,7 +532,7 @@ export const adminSavePromo = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const payload = {
@@ -553,11 +553,11 @@ export const adminSavePromo = createServerFn({ method: "POST" })
   });
 
 export const adminDeletePromo = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     const { error } = await db.from("promo_codes").delete().eq("id", data.id);
@@ -565,36 +565,40 @@ export const adminDeletePromo = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+type IdentityUser = {
+  id: string;
+  email: string;
+  fullName: string;
+  roles: string[];
+  status: "active" | "disabled";
+};
+
+/** Equipo administrador, desde identity (reemplaza auth.admin.listUsers + user_roles). */
 export const adminStaff = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { data: roles } = await db.from("user_roles").select("user_id, role");
-    const { data: profiles } = await db.from("profiles").select("id, full_name, phone");
-    const { data: users } = await db.auth.admin.listUsers({ page: 1, perPage: 200 });
-    return (roles ?? []).map((role) => {
-      const user = users?.users.find((u) => u.id === role.user_id);
-      const profile = (profiles ?? []).find((p) => p.id === role.user_id);
-      return {
-        userId: role.user_id,
-        role: role.role,
-        email: user?.email ?? "—",
-        fullName: profile?.full_name ?? null,
-        lastSignInAt: user?.last_sign_in_at ?? null,
-      };
+    assertAdmin(context.roles);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const page = await gatewayFetch<{ items: IdentityUser[] }>("/admin/users?role=admin&limit=100", {
+      accessToken: context.accessToken,
     });
+    return page.items.map((user) => ({
+      userId: user.id,
+      role: "admin" as const,
+      email: user.email,
+      fullName: user.fullName || null,
+      lastSignInAt: null as string | null,
+    }));
   });
 
 export const adminCreateStaff = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z
       .object({
         email: z.string().email(),
-        password: z.string().min(5).max(72),
+        password: z.string().min(10).max(128),
         fullName: z.string().max(120).optional(),
         role: z.literal("admin"),
       })
@@ -602,40 +606,39 @@ export const adminCreateStaff = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-
-    const { data: created, error } = await db.auth.admin.createUser({
-      email: data.email.toLowerCase(),
-      password: data.password,
-      email_confirm: true,
-      user_metadata: { full_name: data.fullName ?? null },
+    assertAdmin(context.roles);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const created = await gatewayFetch<IdentityUser>("/admin/users", {
+      method: "POST",
+      accessToken: context.accessToken,
+      body: {
+        email: data.email.toLowerCase(),
+        password: data.password,
+        fullName: data.fullName?.trim() || data.email,
+        roles: [data.role],
+      },
     });
-    if (error || !created.user) throw new Error(error?.message ?? "No se pudo crear el usuario");
-
-    await db
-      .from("user_roles")
-      .upsert({ user_id: created.user.id, role: data.role }, { onConflict: "user_id,role" });
-    return { userId: created.user.id };
+    return { userId: created.id };
   });
 
 export const adminRemoveStaff = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((input: unknown) =>
     z.object({ userId: z.string().uuid(), role: z.literal("admin") }).parse(input),
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
-    await assertAdmin(context.supabase, context.userId);
+    assertAdmin(context.roles);
     if (data.userId === context.userId) throw new Error("No puedes quitarte tu propio acceso");
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { error } = await db
-      .from("user_roles")
-      .delete()
-      .eq("user_id", data.userId)
-      .eq("role", data.role);
-    if (error) throw new Error(error.message);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const user = await gatewayFetch<IdentityUser>(`/admin/users/${data.userId}`, {
+      accessToken: context.accessToken,
+    });
+    const roles = user.roles.filter((role) => role !== data.role);
+    await gatewayFetch(`/admin/users/${data.userId}/roles`, {
+      method: "PUT",
+      accessToken: context.accessToken,
+      body: { roles: roles.length > 0 ? roles : ["customer"] },
+    });
     return { ok: true };
   });

@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from "@tanstack/react-router";
 
-import { supabase } from "@/integrations/supabase/client";
+import { currentUser, signOut } from "@/lib/auth.functions";
+import { refreshAuth } from "@/lib/useAuth";
 import { Wordmark } from "@/components/kit/Wordmark";
 import { GhostButton } from "@/components/kit/PillButton";
 import { Caption } from "@/components/kit/Text";
@@ -27,9 +28,10 @@ const NAV: {
 export const Route = createFileRoute("/admin")({
   ssr: false,
   beforeLoad: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
-    return { user: data.user };
+    const user = await currentUser();
+    if (!user) throw redirect({ to: "/auth", search: { redirect: "/admin" } });
+    if (!user.isAdmin) throw redirect({ to: "/mi-cuenta" });
+    return { user };
   },
   head: () => ({
     meta: [
@@ -80,7 +82,9 @@ function AdminLayout() {
             <GhostButton
               arrow={false}
               onClick={() => {
-                void supabase.auth.signOut().then(() => navigate({ to: "/auth" }));
+                void signOut()
+                  .then(() => refreshAuth())
+                  .then(() => navigate({ to: "/auth" }));
               }}
             >
               <span className="text-graphite underline">Cerrar sesión</span>

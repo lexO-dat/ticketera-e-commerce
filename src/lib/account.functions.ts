@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/auth/middleware";
 
 export type MyOrderTicket = { id: string; ticketCode: string; orderItemId: string };
 
@@ -26,11 +26,16 @@ export type MyOrder = {
   }[];
 };
 
-/** Órdenes del usuario autenticado (RLS: sólo las suyas). */
+/**
+ * Órdenes del usuario autenticado. Transitorio (strangler): los datos siguen en Supabase hasta la
+ * Fase 5; sin RLS, la propiedad se filtra explícitamente por el usuario del token de identity.
+ */
 export const myOrders = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }): Promise<MyOrder[]> => {
-    const { data, error } = await context.supabase
+    const { adminDb } = await import("./db.server");
+    const db = await adminDb();
+    const { data, error } = await db
       .from("orders")
       .select(
         `id, order_code, status, total, created_at,

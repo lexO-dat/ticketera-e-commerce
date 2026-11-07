@@ -3,17 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 
 import { PublicLayout } from "@/components/site/PublicLayout";
-import {
-  Caption,
-  DisplayHeading,
-  Hairline,
-  MetaText,
-  SectionTitle,
-} from "@/components/kit/Text";
+import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/components/kit/Text";
 import { GhostButton, PillLink } from "@/components/kit/PillButton";
 import { myOrders, type MyOrder } from "@/lib/account.functions";
-import { useAuth } from "@/lib/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { refreshAuth, useAuth } from "@/lib/useAuth";
+import { signOut } from "@/lib/auth.functions";
 import { dateAndTime, money } from "@/lib/format";
 
 export const Route = createFileRoute("/mi-cuenta")({
@@ -29,7 +23,8 @@ export const Route = createFileRoute("/mi-cuenta")({
       { property: "og:title", content: "Mis tickets y eventos — Ticketera" },
       {
         property: "og:description",
-        content: "Entradas digitales, próximos shows e historial de compras en tu cuenta Ticketera.",
+        content:
+          "Entradas digitales, próximos shows e historial de compras en tu cuenta Ticketera.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -57,9 +52,7 @@ function AccountPage() {
 
   const orders = ordersQuery.data ?? [];
   const now = Date.now();
-  const upcoming = orders.filter((o) =>
-    o.items.some((i) => new Date(i.startsAt).getTime() >= now),
-  );
+  const upcoming = orders.filter((o) => o.items.some((i) => new Date(i.startsAt).getTime() >= now));
   const past = orders.filter((o) => !o.items.some((i) => new Date(i.startsAt).getTime() >= now));
 
   return (
@@ -71,7 +64,9 @@ function AccountPage() {
           <GhostButton
             arrow={false}
             onClick={() => {
-              void supabase.auth.signOut().then(() => navigate({ to: "/", replace: true }));
+              void signOut()
+                .then(() => refreshAuth())
+                .then(() => navigate({ to: "/", replace: true }));
             }}
           >
             <span className="text-graphite underline">Cerrar sesión</span>
@@ -91,7 +86,11 @@ function AccountPage() {
           </div>
         ) : (
           <>
-            <OrderGroup title="Próximos shows" orders={upcoming} empty="No tienes shows próximos." />
+            <OrderGroup
+              title="Próximos shows"
+              orders={upcoming}
+              empty="No tienes shows próximos."
+            />
             <OrderGroup
               title="Eventos pasados"
               orders={past}
@@ -104,15 +103,7 @@ function AccountPage() {
   );
 }
 
-function OrderGroup({
-  title,
-  orders,
-  empty,
-}: {
-  title: string;
-  orders: MyOrder[];
-  empty: string;
-}) {
+function OrderGroup({ title, orders, empty }: { title: string; orders: MyOrder[]; empty: string }) {
   return (
     <section className="mt-16">
       <SectionTitle>{title}</SectionTitle>
