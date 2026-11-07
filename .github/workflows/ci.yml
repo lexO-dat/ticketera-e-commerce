@@ -78,7 +78,7 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        service: [template]
+        service: [template, identity, gateway]
     steps:
       - uses: actions/checkout@v5
       - name: Validar docker compose

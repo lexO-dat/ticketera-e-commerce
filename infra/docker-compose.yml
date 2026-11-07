@@ -170,6 +170,55 @@ services:
       timeout: 3s
       retries: 20
 
+  # --- Servicios (Fase 2) ---
+  identity:
+    build:
+      context: ..
+      dockerfile: services/identity/Dockerfile
+    init: true
+    # ADR-01: réplicas sin estado; comparten BD (claves de firma, migraciones con advisory lock).
+    deploy:
+      replicas: 2
+    environment:
+      SERVICE_NAME: identity
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://identity:${PG_PASSWORD_IDENTITY:-identity-dev-password}@postgres-primary:5432/identity
+      AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
+      KEY_ENCRYPTION_SECRET: ${IDENTITY_KEY_ENCRYPTION_SECRET:-ZGV2LW9ubHkta2V5LWVuY3J5cHRpb24tc2VjcmV0ISE=}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-https://localhost:8443}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@ticketera.local}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-admin-dev-password-123}
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      postgres-replica:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: services/gateway/Dockerfile
+    init: true
+    environment:
+      SERVICE_NAME: gateway
+      PORT: "3000"
+      LOG_LEVEL: info
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      # El DNS de Docker reparte entre las réplicas de identity.
+      IDENTITY_URLS: http://identity:3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost:8443}
+    ports:
+      # La web (BFF) en desarrollo llama al gateway directo; el navegador entra por Nginx.
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+      identity:
+        condition: service_healthy
+
   # Plantilla de servicio: `docker compose --profile template up -d --build template`.
   template:
     profiles: ["template"]
