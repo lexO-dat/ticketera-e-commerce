@@ -28,9 +28,11 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 
 ## Fase 2 — identity + gateway (reemplaza Supabase Auth y RLS)
 
-- [ ] Registro, login, logout, refresh rotativo, verificación de email, recuperación de contraseña, roles
-- [ ] Gateway: JWKS, rate limiting, CORS/CSRF, request-id, enrutamiento
-- [ ] La web usa identity para autenticarse
+- [x] Registro, login, logout, refresh rotativo, verificación de email, recuperación de contraseña, roles
+- [x] API admin de usuarios, bootstrap del primer admin, claves EdDSA cifradas con rotación
+- [x] Gateway: JWKS, rate limiting (Redis), CORS, request-id, enrutamiento con balanceo entre réplicas
+- [x] La web usa identity para autenticarse (BFF con cookies HttpOnly, ADR-08)
+- [ ] Correos de verificación y recuperación: los envía `notifications` (Fase 7)
 
 ## Fase 3 — catalog
 

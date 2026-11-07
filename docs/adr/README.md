@@ -12,3 +12,4 @@ lo marque como _Reemplazado por ADR-NN_.
 | [ADR-05](ADR-05-servicios-por-dominio.md) | Servicios por dominio + contratos | Aceptado | ASR05 |
 | [ADR-06](ADR-06-fila-virtual.md) | Fila virtual con token de admisión | Aceptado | ASR02, ASR03 |
 | [ADR-07](ADR-07-adquirente-mock.md) | Adquirente detrás de un adapter (Webpay mock) | Aceptado | ASR04, ASR05 |
+| [ADR-08](ADR-08-sesion-web-bff.md) | Sesión web con BFF y cookies HttpOnly | Aceptado | ASR04 |

@@ -110,6 +110,7 @@ flowchart LR
 | ADR-05 | Servicios por dominio tras API Gateway; contratos OpenAPI / AsyncAPI; `ItemVendible` como punto de extensión | [`docs/adr/ADR-05`](docs/adr/ADR-05-servicios-por-dominio.md) |
 | ADR-06 | **Fila virtual** con Redis y token de admisión firmado (agregada; no estaba en la presentación) | [`docs/adr/ADR-06`](docs/adr/ADR-06-fila-virtual.md) |
 | ADR-07 | Adquirente detrás de un adapter; Webpay como mock por dominio de email | [`docs/adr/ADR-07`](docs/adr/ADR-07-adquirente-mock.md) |
+| ADR-08 | Sesión web como BFF: tokens en cookies HttpOnly, nunca en el navegador | [`docs/adr/ADR-08`](docs/adr/ADR-08-sesion-web-bff.md) |
 
 ## 4. Flujo de compra (vista de procesos)
 
@@ -178,8 +179,9 @@ docs/
   architecture/  adr/  services/
 ```
 
-Estado (Fase 1 completa): existen `packages/commons`, `packages/contracts`, `services/template` e
-`infra/`. Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
+Estado (Fases 1 y 2 completas): existen `packages/commons`, `packages/contracts`, `infra/`,
+`services/template`, `services/identity` y `services/gateway`; la web ya se autentica con identity
+(BFF, ADR-08) y el resto de sus datos sigue en Supabase hasta su fase. Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
 Comandos y servicios locales: [`README.md`](README.md).
 
 Mientras dure la migración, la app actual sigue en `src/`. Se migra con patrón **strangler**: cada
