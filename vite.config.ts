@@ -1,15 +1,64 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
-//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
-//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import { nitro } from "nitro/vite";
+import { defineConfig, type Plugin } from "vite";
+import tsConfigPaths from "vite-tsconfig-paths";
 
-export default defineConfig({
-  tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
+/**
+ * Dev only: a rejected promise during SSR (e.g. a failing server function) would
+ * otherwise kill the Vite process. Log it and keep the dev server alive.
+ */
+function devKeepAliveOnRejection(): Plugin {
+  return {
+    name: "dev-keep-alive-on-rejection",
+    apply: "serve",
+    configureServer(server) {
+      const onRejection = (reason: unknown) => {
+        server.config.logger.error(`[ssr] Unhandled rejection: ${String(reason)}`, {
+          error: reason instanceof Error ? reason : null,
+        });
+      };
+      process.on("unhandledRejection", onRejection);
+      server.httpServer?.once("close", () => process.off("unhandledRejection", onRejection));
+    },
+  };
+}
+
+export default defineConfig(({ command }) => ({
+  server: {
+    host: true,
+    port: 8080,
   },
-});
+  resolve: {
+    dedupe: [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+      "@tanstack/react-query",
+      "@tanstack/query-core",
+    ],
+  },
+  plugins: [
+    tailwindcss(),
+    tsConfigPaths({ projects: ["./tsconfig.json"] }),
+    tanstackStart({
+      // Redirect TanStack Start's bundled server entry to src/server.ts (SSR error wrapper).
+      server: { entry: "server" },
+      importProtection: {
+        behavior: "error",
+        client: {
+          files: ["**/server/**"],
+          specifiers: ["server-only"],
+        },
+      },
+    }),
+    // Self-hosted Node server output (.output/server/index.mjs). Override with NITRO_PRESET.
+    ...(command === "build"
+      ? [nitro({ preset: process.env["NITRO_PRESET"] ?? "node-server" })]
+      : []),
+    viteReact(),
+    devKeepAliveOnRejection(),
+  ],
+}));

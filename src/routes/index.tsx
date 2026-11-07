@@ -4,7 +4,15 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { PublicLayout } from "@/components/site/PublicLayout";
 import { EventCard } from "@/components/site/EventCard";
 import { HeroMedia } from "@/components/site/HeroMedia";
-import { Caption, DisplayHeading, Lead, MetaText, SectionBand, SectionTitle, UrgencyTag } from "@/components/kit/Text";
+import {
+  Caption,
+  DisplayHeading,
+  Lead,
+  MetaText,
+  SectionBand,
+  SectionTitle,
+  UrgencyTag,
+} from "@/components/kit/Text";
 import { PillLink } from "@/components/kit/PillButton";
 import { listEvents } from "@/lib/catalog.functions";
 import { CATEGORIES, CATEGORY_LABELS, dateAndTime, money } from "@/lib/format";
@@ -38,7 +46,9 @@ export const Route = createFileRoute("/")({
     <PublicLayout>
       <div className="mx-auto max-w-[1240px] px-5 py-24 md:px-8" role="alert">
         <SectionTitle>No pudimos cargar la cartelera</SectionTitle>
-        <MetaText className="mt-3">{error.message}</MetaText>
+        <MetaText className="mt-3">
+          {error instanceof Error ? error.message : String(error)}
+        </MetaText>
       </div>
     </PublicLayout>
   ),

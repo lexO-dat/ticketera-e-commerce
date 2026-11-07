@@ -39,7 +39,10 @@ export const Route = createFileRoute("/eventos")({
           "Busca y filtra shows en vivo por categoría, ciudad y precio. Compra tickets con mapa de asientos.",
       },
       { property: "og:title", content: "Cartelera de eventos — Ticketera" },
-      { property: "og:description", content: "Todos los shows en venta, filtrables por ciudad y categoría." },
+      {
+        property: "og:description",
+        content: "Todos los shows en venta, filtrables por ciudad y categoría.",
+      },
     ],
   }),
   component: EventsPage,
@@ -47,7 +50,9 @@ export const Route = createFileRoute("/eventos")({
     <PublicLayout>
       <div className="mx-auto max-w-[1240px] px-5 py-24 md:px-8" role="alert">
         <SectionTitle>No pudimos cargar la cartelera</SectionTitle>
-        <MetaText className="mt-3">{error.message}</MetaText>
+        <MetaText className="mt-3">
+          {error instanceof Error ? error.message : String(error)}
+        </MetaText>
       </div>
     </PublicLayout>
   ),

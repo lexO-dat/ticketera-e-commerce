@@ -15,7 +15,7 @@ function code(prefix: string, length: number) {
 }
 
 export const holdSeats = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         eventDateId: z.string().uuid(),
@@ -64,22 +64,16 @@ export const holdSeats = createServerFn({ method: "POST" })
   });
 
 export const releaseSeats = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) =>
-    z.object({ sessionToken: z.string().min(6).max(80) }).parse(input),
-  )
+  .validator((input: unknown) => z.object({ sessionToken: z.string().min(6).max(80) }).parse(input))
   .handler(async ({ data }) => {
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
-    await db
-      .from("seat_holds")
-      .delete()
-      .eq("session_token", data.sessionToken)
-      .eq("sold", false);
+    await db.from("seat_holds").delete().eq("session_token", data.sessionToken).eq("sold", false);
     return { ok: true };
   });
 
 export const validatePromo = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => z.object({ code: z.string().min(2).max(40) }).parse(input))
+  .validator((input: unknown) => z.object({ code: z.string().min(2).max(40) }).parse(input))
   .handler(async ({ data }) => {
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
@@ -108,7 +102,7 @@ const orderItemSchema = z.object({
 
 export const createOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         buyerName: z.string().min(2).max(120),
@@ -248,7 +242,7 @@ export const createOrder = createServerFn({ method: "POST" })
   });
 
 export const getOrder = createServerFn({ method: "GET" })
-  .inputValidator((input: unknown) => z.object({ code: z.string().min(4).max(40) }).parse(input))
+  .validator((input: unknown) => z.object({ code: z.string().min(4).max(40) }).parse(input))
   .handler(async ({ data }) => {
     const { adminDb } = await import("./db.server");
     const db = await adminDb();

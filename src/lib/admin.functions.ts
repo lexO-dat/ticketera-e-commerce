@@ -11,18 +11,23 @@ export const adminOverview = createServerFn({ method: "GET" })
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
 
-    const [{ data: orders }, { data: events }, { data: metrics }, { data: types }, { data: queues }] =
-      await Promise.all([
-        db
-          .from("orders")
-          .select("id, order_code, buyer_name, buyer_email, total, status, created_at")
-          .order("created_at", { ascending: false })
-          .limit(300),
-        db.from("events").select("id, title, slug, status, category"),
-        db.from("event_metrics").select("event_id, kind, quantity, amount, created_at").limit(5000),
-        db.from("ticket_types").select("id, event_date_id, capacity, sold, price, service_fee"),
-        db.from("queue_sessions").select("event_id, state"),
-      ]);
+    const [
+      { data: orders },
+      { data: events },
+      { data: metrics },
+      { data: types },
+      { data: queues },
+    ] = await Promise.all([
+      db
+        .from("orders")
+        .select("id, order_code, buyer_name, buyer_email, total, status, created_at")
+        .order("created_at", { ascending: false })
+        .limit(300),
+      db.from("events").select("id, title, slug, status, category"),
+      db.from("event_metrics").select("event_id, kind, quantity, amount, created_at").limit(5000),
+      db.from("ticket_types").select("id, event_date_id, capacity, sold, price, service_fee"),
+      db.from("queue_sessions").select("event_id, state"),
+    ]);
 
     const paid = (orders ?? []).filter((o) => o.status === "paid");
     const revenue = paid.reduce((s, o) => s + Number(o.total), 0);
@@ -103,7 +108,7 @@ export const adminEvents = createServerFn({ method: "GET" })
 
 export const adminSaveEvent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         id: z.string().uuid().nullable().optional(),
@@ -156,7 +161,7 @@ export const adminSaveEvent = createServerFn({ method: "POST" })
 
 export const adminDeleteEvent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     await assertAdmin(context.supabase, context.userId);
@@ -169,7 +174,7 @@ export const adminDeleteEvent = createServerFn({ method: "POST" })
 
 export const adminSaveQueue = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         eventId: z.string().uuid(),
@@ -203,7 +208,7 @@ export const adminSaveQueue = createServerFn({ method: "POST" })
 
 export const adminResetQueue = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ eventId: z.string().uuid() }).parse(input))
+  .validator((input: unknown) => z.object({ eventId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     await assertAdmin(context.supabase, context.userId);
@@ -215,7 +220,7 @@ export const adminResetQueue = createServerFn({ method: "POST" })
 
 export const adminSaveDate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         id: z.string().uuid().nullable().optional(),
@@ -290,7 +295,7 @@ export const adminSaveDate = createServerFn({ method: "POST" })
 
 export const adminDeleteDate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     await assertAdmin(context.supabase, context.userId);
@@ -321,7 +326,7 @@ export const adminVenues = createServerFn({ method: "GET" })
 
 export const adminSaveVenue = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         id: z.string().uuid().nullable().optional(),
@@ -348,18 +353,14 @@ export const adminSaveVenue = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
       return { id: data.id };
     }
-    const { data: created, error } = await db
-      .from("venues")
-      .insert(payload)
-      .select("id")
-      .single();
+    const { data: created, error } = await db.from("venues").insert(payload).select("id").single();
     if (error || !created) throw new Error(error?.message ?? "No se pudo crear el recinto");
     return { id: created.id };
   });
 
 export const adminSaveSection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         id: z.string().uuid().nullable().optional(),
@@ -421,10 +422,7 @@ export const adminSaveSection = createServerFn({ method: "POST" })
       }).map((seat) => ({ ...seat, section_id: sectionId }));
       const { error } = await db.from("venue_seats").insert(seats);
       if (error) throw new Error(error.message);
-      await db
-        .from("venue_sections")
-        .update({ capacity: seats.length })
-        .eq("id", sectionId);
+      await db.from("venue_sections").update({ capacity: seats.length }).eq("id", sectionId);
     }
 
     return { id: sectionId };
@@ -432,7 +430,7 @@ export const adminSaveSection = createServerFn({ method: "POST" })
 
 export const adminDeleteSection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     await assertAdmin(context.supabase, context.userId);
@@ -445,7 +443,7 @@ export const adminDeleteSection = createServerFn({ method: "POST" })
 
 export const adminToggleSeat = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z.object({ seatId: z.string().uuid(), blocked: z.boolean() }).parse(input),
   )
   .handler(async ({ data, context }) => {
@@ -485,7 +483,7 @@ export const adminOrders = createServerFn({ method: "GET" })
 
 export const adminUpdateOrderStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -520,7 +518,7 @@ export const adminPromos = createServerFn({ method: "GET" })
 
 export const adminSavePromo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         id: z.string().uuid().nullable().optional(),
@@ -556,7 +554,7 @@ export const adminSavePromo = createServerFn({ method: "POST" })
 
 export const adminDeletePromo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     await assertAdmin(context.supabase, context.userId);
@@ -592,7 +590,7 @@ export const adminStaff = createServerFn({ method: "GET" })
 
 export const adminCreateStaff = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         email: z.string().email(),
@@ -624,10 +622,8 @@ export const adminCreateStaff = createServerFn({ method: "POST" })
 
 export const adminRemoveStaff = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z
-      .object({ userId: z.string().uuid(), role: z.literal("admin") })
-      .parse(input),
+  .validator((input: unknown) =>
+    z.object({ userId: z.string().uuid(), role: z.literal("admin") }).parse(input),
   )
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");

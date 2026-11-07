@@ -32,7 +32,10 @@ export const Route = createFileRoute("/evento/$slug")({
   head: ({ loaderData }) => {
     if (!loaderData) {
       return {
-        meta: [{ title: "Evento no disponible — Ticketera" }, { name: "robots", content: "noindex" }],
+        meta: [
+          { title: "Evento no disponible — Ticketera" },
+          { name: "robots", content: "noindex" },
+        ],
       };
     }
     const { event } = loaderData;
@@ -60,7 +63,9 @@ export const Route = createFileRoute("/evento/$slug")({
     <PublicLayout>
       <div className="mx-auto max-w-[1240px] px-5 py-24 md:px-8" role="alert">
         <SectionTitle>No pudimos cargar el evento</SectionTitle>
-        <MetaText className="mt-3">{error.message}</MetaText>
+        <MetaText className="mt-3">
+          {error instanceof Error ? error.message : String(error)}
+        </MetaText>
       </div>
     </PublicLayout>
   ),

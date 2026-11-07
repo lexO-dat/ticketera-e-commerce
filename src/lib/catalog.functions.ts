@@ -96,7 +96,7 @@ const listSchema = z.object({
 });
 
 export const listEvents = createServerFn({ method: "GET" })
-  .inputValidator((input: unknown) => listSchema.parse(input ?? {}))
+  .validator((input: unknown) => listSchema.parse(input ?? {}))
   .handler(async ({ data }) => {
     const { publicDb } = await import("./db.server");
     const { data: rows, error } = await publicDb()
@@ -131,7 +131,7 @@ export const listEvents = createServerFn({ method: "GET" })
   });
 
 export const getEvent = createServerFn({ method: "GET" })
-  .inputValidator((input: unknown) => z.object({ slug: z.string() }).parse(input))
+  .validator((input: unknown) => z.object({ slug: z.string() }).parse(input))
   .handler(async ({ data }) => {
     const { publicDb } = await import("./db.server");
     const db = publicDb();
@@ -197,7 +197,7 @@ export const getEvent = createServerFn({ method: "GET" })
   });
 
 export const getSeatMap = createServerFn({ method: "GET" })
-  .inputValidator((input: unknown) => z.object({ eventDateId: z.string().uuid() }).parse(input))
+  .validator((input: unknown) => z.object({ eventDateId: z.string().uuid() }).parse(input))
   .handler(async ({ data }) => {
     const { publicDb } = await import("./db.server");
     const db = publicDb();
@@ -294,7 +294,7 @@ export const listVenues = createServerFn({ method: "GET" }).handler(async () => 
 });
 
 export const subscribeNewsletter = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => z.object({ email: z.string().email() }).parse(input))
+  .validator((input: unknown) => z.object({ email: z.string().email() }).parse(input))
   .handler(async ({ data }) => {
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
@@ -306,7 +306,7 @@ export const subscribeNewsletter = createServerFn({ method: "POST" })
   });
 
 export const trackMetric = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         eventId: z.string().uuid(),
