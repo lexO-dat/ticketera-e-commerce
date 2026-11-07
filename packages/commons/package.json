@@ -6,6 +6,7 @@
   "description": "Tipos, ItemVendible, logger, errores, eventos, BD, Redis y servidor HTTP compartidos por los servicios",
   "exports": {
     ".": "./src/index.ts",
+    "./auth": "./src/auth/index.ts",
     "./db": "./src/db/index.ts",
     "./events": "./src/events/index.ts",
     "./http": "./src/http/index.ts",
@@ -19,6 +20,7 @@
     "amqplib": "^2.2.1",
     "fastify": "^5.12.8",
     "ioredis": "^6.0.0",
+    "jose": "^6.2.15",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
     "zod": "^4.6.7"
