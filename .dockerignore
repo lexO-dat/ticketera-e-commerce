@@ -1,0 +1,20 @@
+# Contexto mínimo para construir imágenes de servicios (los Dockerfile usan la raíz como contexto).
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/coverage
+.git
+.github
+.output
+.nitro
+.tanstack
+.vinxi
+.wrangler
+infra
+docs
+public
+src
+supabase
+*.md

@@ -1,0 +1,203 @@
+# Infraestructura local (vista física en pequeño). Solo para desarrollo y pruebas.
+#   npm run infra:up      levanta todo y espera a que esté sano
+#   npm run infra:down    detiene (conserva datos)
+#   npm run infra:reset   detiene y borra volúmenes
+# Las credenciales por defecto son solo de desarrollo; se sobrescriben con infra/.env.
+name: ticketera
+
+x-postgres-env: &postgres-env
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-dev-password}
+  REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:-replicator-dev-password}
+
+services:
+  postgres-primary:
+    image: postgres:17-alpine
+    environment:
+      <<: *postgres-env
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --data-checksums
+      # Una base de datos (y un rol dueño) por servicio. `commons_test` es para pruebas de integración.
+      SERVICE_DATABASES: identity catalog inventory orders payments tickets template commons_test
+      # ADR-01: replicación síncrona. Vacío = asíncrona (útil si se trabaja sin la réplica).
+      PG_SYNC_STANDBY_NAMES: ${PG_SYNC_STANDBY_NAMES-ANY 1 (replica1)}
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - synchronous_commit=on
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - max_connections=300
+    volumes:
+      - postgres-primary:/var/lib/postgresql/data
+      - ./postgres/primary-init.sh:/docker-entrypoint-initdb.d/00-primary-init.sh:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  postgres-replica:
+    image: postgres:17-alpine
+    user: postgres
+    environment:
+      <<: *postgres-env
+      PGDATA: /var/lib/postgresql/data/pgdata
+      PRIMARY_HOST: postgres-primary
+      REPLICA_NAME: replica1
+    entrypoint: ["bash", "/replica-entrypoint.sh"]
+    # Debe coincidir con la primaria (un hot standby no puede tener menos conexiones).
+    command: ["-c", "max_connections=300"]
+    volumes:
+      - postgres-replica:/var/lib/postgresql/data
+      - ./postgres/replica-entrypoint.sh:/replica-entrypoint.sh:ro
+    ports:
+      - "127.0.0.1:5433:5432"
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  redis-primary:
+    image: redis:8-alpine
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:-redis-dev-password}
+      - --masterauth
+      - ${REDIS_PASSWORD:-redis-dev-password}
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+    volumes:
+      - redis-primary:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-dev-password}
+
+  redis-replica:
+    image: redis:8-alpine
+    command:
+      - redis-server
+      - --replicaof
+      - redis-primary
+      - "6379"
+      - --masterauth
+      - ${REDIS_PASSWORD:-redis-dev-password}
+      - --requirepass
+      - ${REDIS_PASSWORD:-redis-dev-password}
+      - --replica-read-only
+      - "yes"
+    volumes:
+      - redis-replica:/data
+    ports:
+      - "127.0.0.1:6380:6379"
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning info replication | grep -q 'master_link_status:up'
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-dev-password}
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-ticketera}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-rabbitmq-dev-password}
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.29
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "127.0.0.1:8088:80"
+      - "127.0.0.1:8443:443"
+    volumes:
+      - nginx-certs:/etc/nginx/certs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health | grep -q ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Plantilla de servicio: `docker compose --profile template up -d --build template`.
+  template:
+    profiles: ["template"]
+    build:
+      context: ..
+      dockerfile: services/template/Dockerfile
+    init: true
+    environment:
+      SERVICE_NAME: template
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://template:${PG_PASSWORD_TEMPLATE:-template-dev-password}@postgres-primary:5432/template
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
+    ports:
+      - "127.0.0.1:3900:3000"
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis-primary:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  postgres-primary:
+  postgres-replica:
+  redis-primary:
+  redis-replica:
+  rabbitmq:
+  nginx-certs:
