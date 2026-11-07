@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint, typecheck, tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: commons_test
+          POSTGRES_PASSWORD: commons_test
+          POSTGRES_DB: commons_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U commons_test" --health-interval 2s --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
+      rabbitmq:
+        image: rabbitmq:4-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: ci
+          RABBITMQ_DEFAULT_PASS: ci
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_port_connectivity" --health-interval 5s
+          --health-timeout 10s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://commons_test:commons_test@localhost:5432/commons_test
+      TEST_REDIS_URL: redis://localhost:6379
+      TEST_AMQP_URL: amqp://ci:ci@localhost:5672
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint:backend
+      - run: npm run typecheck --workspaces --if-present
+      - run: npm test
+      - run: npm run build:backend
+
+  web:
+    name: Web (typecheck, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  images:
+    name: Imagen ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        service: [template]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validar docker compose
+        run: docker compose -f infra/docker-compose.yml --profile template config --quiet
+      - name: Construir imagen
+        run: docker build -f services/${{ matrix.service }}/Dockerfile -t ticketera/${{ matrix.service }}:ci .
