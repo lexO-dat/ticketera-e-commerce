@@ -122,6 +122,30 @@ channels:
     messages:
       RecuperacionContrasenaSolicitada:
         $ref: "#/components/messages/RecuperacionContrasenaSolicitada"
+  EventoActualizado:
+    address: catalog.EventoActualizado.v1
+    description: "Un evento del catálogo cambió (datos, estado, fechas o tipos de entrada). Lleva el estado completo."
+    messages:
+      EventoActualizado:
+        $ref: "#/components/messages/EventoActualizado"
+  EventoEliminado:
+    address: catalog.EventoEliminado.v1
+    description: "Un evento se eliminó del catálogo (con sus fechas y tipos de entrada)."
+    messages:
+      EventoEliminado:
+        $ref: "#/components/messages/EventoEliminado"
+  ProductoActualizado:
+    address: catalog.ProductoActualizado.v1
+    description: "Un producto (`ItemVendible` kind `product`) se creó o cambió."
+    messages:
+      ProductoActualizado:
+        $ref: "#/components/messages/ProductoActualizado"
+  ProductoEliminado:
+    address: catalog.ProductoEliminado.v1
+    description: "Un producto se eliminó del catálogo."
+    messages:
+      ProductoEliminado:
+        $ref: "#/components/messages/ProductoEliminado"
 operations:
   publishTurnoCreado:
     action: send
@@ -213,6 +237,26 @@ operations:
     summary: "Publicado por `identity`; lo consumen `notifications`."
     channel:
       $ref: "#/channels/RecuperacionContrasenaSolicitada"
+  publishEventoActualizado:
+    action: send
+    summary: "Publicado por `catalog`; lo consumen `inventory` (capacidad por tipo de entrada) y `queue`."
+    channel:
+      $ref: "#/channels/EventoActualizado"
+  publishEventoEliminado:
+    action: send
+    summary: "Publicado por `catalog`; lo consumen `inventory` y `queue`."
+    channel:
+      $ref: "#/channels/EventoEliminado"
+  publishProductoActualizado:
+    action: send
+    summary: "Publicado por `catalog`; lo consume `inventory` (stock)."
+    channel:
+      $ref: "#/channels/ProductoActualizado"
+  publishProductoEliminado:
+    action: send
+    summary: "Publicado por `catalog`; lo consume `inventory`."
+    channel:
+      $ref: "#/channels/ProductoEliminado"
 components:
   schemas:
     Money:
@@ -576,3 +620,104 @@ components:
                   userId: { type: string, format: uuid }
                   email: { type: string, format: email }
                   resetUrl: { type: string, format: uri }
+    EventoActualizado:
+      name: EventoActualizado
+      title: "EventoActualizado v1"
+      summary: "Un evento del catálogo cambió (datos, estado, fechas o tipos de entrada). Lleva el estado completo."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: EventoActualizado }
+              source: { const: catalog }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [eventId, slug, title, status, dates]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  slug: { type: string }
+                  title: { type: string }
+                  status: { type: string, enum: [draft, published, soldout, archived] }
+                  ownerId: { type: [string, "null"], format: uuid }
+                  dates:
+                    type: array
+                    items:
+                      type: object
+                      required: [dateId, venueId, startsAt, onSale, ticketTypes]
+                      properties:
+                        dateId: { type: string, format: uuid }
+                        venueId: { type: string, format: uuid }
+                        startsAt: { type: string, format: date-time }
+                        onSale: { type: boolean }
+                        ticketTypes:
+                          type: array
+                          items:
+                            type: object
+                            required: [ticketTypeId, sectionId, seated, capacity, price, fee]
+                            properties:
+                              ticketTypeId: { type: string, format: uuid }
+                              sectionId: { type: string, format: uuid }
+                              seated: { type: boolean }
+                              capacity: { type: integer, minimum: 0 }
+                              price: { $ref: "#/components/schemas/Money" }
+                              fee: { $ref: "#/components/schemas/Money" }
+    EventoEliminado:
+      name: EventoEliminado
+      title: "EventoEliminado v1"
+      summary: "Un evento se eliminó del catálogo (con sus fechas y tipos de entrada)."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: EventoEliminado }
+              source: { const: catalog }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [eventId]
+                properties:
+                  eventId: { type: string, format: uuid }
+    ProductoActualizado:
+      name: ProductoActualizado
+      title: "ProductoActualizado v1"
+      summary: "Un producto (`ItemVendible` kind `product`) se creó o cambió."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: ProductoActualizado }
+              source: { const: catalog }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [productId, slug, name, status, price, fee]
+                properties:
+                  productId: { type: string, format: uuid }
+                  slug: { type: string }
+                  name: { type: string }
+                  status: { type: string, enum: [draft, active, archived] }
+                  price: { $ref: "#/components/schemas/Money" }
+                  fee: { $ref: "#/components/schemas/Money" }
+                  eventId: { type: [string, "null"], format: uuid }
+                  ownerId: { type: [string, "null"], format: uuid }
+    ProductoEliminado:
+      name: ProductoEliminado
+      title: "ProductoEliminado v1"
+      summary: "Un producto se eliminó del catálogo."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: ProductoEliminado }
+              source: { const: catalog }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [productId]
+                properties:
+                  productId: { type: string, format: uuid }

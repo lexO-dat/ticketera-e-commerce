@@ -6,6 +6,11 @@
  * Clave de enrutamiento en RabbitMQ: `<source>.<type>.v<version>` (exchange `ticketera.events`).
  */
 export const DomainEvents = {
+  // catalog (ADR-05: estado completo del agregado en cada cambio)
+  EventoActualizado: { source: "catalog", version: 1 },
+  EventoEliminado: { source: "catalog", version: 1 },
+  ProductoActualizado: { source: "catalog", version: 1 },
+  ProductoEliminado: { source: "catalog", version: 1 },
   // queue (ADR-06)
   TurnoCreado: { source: "queue", version: 1 },
   TurnoAdmitido: { source: "queue", version: 1 },
@@ -45,4 +50,4 @@ export function bindingFor(type: DomainEventType): string {
 }
 
 /** Servicios con contrato HTTP en `openapi/<servicio>.yaml`. */
-export const HttpServices = ["template", "identity", "gateway"] as const;
+export const HttpServices = ["template", "identity", "gateway", "catalog"] as const;
