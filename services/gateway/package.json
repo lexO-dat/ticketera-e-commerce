@@ -1,0 +1,31 @@
+{
+  "name": "@services/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "API Gateway: enrutamiento, verificación de JWT, rate limiting, CORS y request-id",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.4.1",
+    "@fastify/http-proxy": "^11.6.6",
+    "@shared/commons": "*",
+    "fastify": "^5.12.8",
+    "ioredis": "^6.0.0",
+    "jose": "^6.2.15",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.8.3",
+    "vitest": "^5.1.0"
+  }
+}

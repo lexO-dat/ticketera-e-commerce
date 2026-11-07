@@ -1,0 +1,20 @@
+openapi: 3.1.0
+info:
+  title: gateway
+  version: 1.0.0
+  description: >
+    Entrada única al backend (detrás de Nginx en `https://localhost:8443/api`). Verifica el JWT con
+    el JWKS de identity, aplica rate limiting distribuido (Redis), CORS por lista blanca y propaga
+    `x-request-id`. Solo acepta `Authorization: Bearer` (descarta cookies: inmune a CSRF).
+    Enrutamiento (services/gateway/src/routes.ts):
+    `/auth/*` → identity `/v1/auth/*`; `/admin/users*` → identity `/v1/admin/users*` (rol admin);
+    `/.well-known/jwks.json` → identity. Los contratos de cada ruta están en el OpenAPI del servicio.
+    Límites: login 10/min por IP, registro y recuperación 5/10 min por IP, refresh 60/min por IP,
+    general 300/min por usuario (o IP). Excedidos → 429 con `Retry-After`.
+servers:
+  - url: https://localhost:8443/api
+paths:
+  /health/live:
+    $ref: "./common.yaml#/paths/~1health~1live"
+  /health/ready:
+    $ref: "./common.yaml#/paths/~1health~1ready"
