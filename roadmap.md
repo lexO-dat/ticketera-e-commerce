@@ -36,9 +36,12 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 
 ## Fase 3 — catalog
 
-- [ ] Eventos, fechas, recintos, sectores, butacas; productos como `ItemVendible`
-- [ ] Media propia (subida de imágenes) y caché de lectura
-- [ ] Migración de los datos semilla desde `supabase/migrations`
+- [x] Eventos, fechas, recintos, sectores, butacas; productos como `ItemVendible` (`POST /v1/items/resolve`)
+- [x] Autorización por rol y dueño (organizer: sus eventos; seller: sus productos)
+- [x] Media propia (re-codificación a WebP, ADR-09) y caché de lectura en Redis invalidada por generación
+- [x] Migración de los datos semilla desde `supabase/migrations` (mismos UUID)
+- [x] La web lee y administra el catálogo vía gateway; página de productos en el panel
+- [ ] Vendidos / disponibilidad en el catálogo público: los aporta `inventory` (Fase 4)
 
 ## Fase 4 — inventory + queue
 

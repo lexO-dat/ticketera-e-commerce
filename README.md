@@ -12,7 +12,7 @@ Requisitos: Node 22.18+, Docker con Compose.
 
 ```bash
 npm install
-npm run infra:up      # infraestructura + identity (2 réplicas) + gateway (construye las imágenes)
+npm run infra:up      # infraestructura + identity y catalog (2 réplicas c/u) + gateway
 cp .env.example .env  # la web habla con el gateway en GATEWAY_URL
 npm run dev           # web (TanStack Start) en http://localhost:8080 · vía Nginx: https://localhost:8443
 ```
@@ -42,6 +42,7 @@ Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 | `services/template`  | Plantilla de servicio; `npm run new:service -- <nombre>` crea uno nuevo                           |
 | `services/identity`  | Cuentas, sesiones (JWT EdDSA + refresh rotativo), roles y API admin de usuarios                   |
 | `services/gateway`   | Entrada única: enrutamiento, verificación de JWT, rate limiting, CORS, request-id                 |
+| `services/catalog`   | Eventos, recintos, butacas, productos (`ItemVendible`), imágenes y caché de lectura               |
 | `infra/`             | `docker-compose.yml`, Postgres (réplica síncrona), Nginx                                          |
 
 | Comando                                           | Qué hace                                                                                          |

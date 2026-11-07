@@ -40,7 +40,7 @@ gestionados de terceros (Supabase, Firebase, Auth0, Clerk, Stripe, SendGrid, Alg
 | Supabase Auth (signup, login, JWT, refresh) | **identity-service** | Argon2id, JWT EdDSA + JWKS, refresh rotativo |
 | Row Level Security (`auth.uid()`, `has_role`) | Autorización explícita en gateway + servicios | Nunca confiar en el cliente |
 | `auth.admin.listUsers/createUser` | identity-service (API admin) | Roles: `customer`, `organizer`, `seller`, `staff`, `admin` |
-| Assets en CDN de Lovable / Supabase Storage | **media** (módulo de catalog-service) sobre volumen o MinIO self-hosted | Validación de tipo/tamaño, URLs firmadas |
+| Assets en CDN de Lovable / Supabase Storage | **media** (módulo de catalog-service) en Postgres + caché de Nginx (ADR-09) | Re-codificación a WebP, validación por contenido, tamaño máximo |
 | Envío de correos (inexistente hoy) | **notifications-service** (Python) + SMTP propio (Mailpit en dev) | Plantillas HTML, cola, reintentos |
 | Cron de Supabase | Jobs dentro de cada servicio con lock distribuido (Redis) | Expiración de reservas, conciliación |
 | Fila virtual simulada (`Math.random`) | **queue-service** real sobre Redis | Ver §5 y `docs/services/virtual-queue.md` |
@@ -111,6 +111,7 @@ flowchart LR
 | ADR-06 | **Fila virtual** con Redis y token de admisión firmado (agregada; no estaba en la presentación) | [`docs/adr/ADR-06`](docs/adr/ADR-06-fila-virtual.md) |
 | ADR-07 | Adquirente detrás de un adapter; Webpay como mock por dominio de email | [`docs/adr/ADR-07`](docs/adr/ADR-07-adquirente-mock.md) |
 | ADR-08 | Sesión web como BFF: tokens en cookies HttpOnly, nunca en el navegador | [`docs/adr/ADR-08`](docs/adr/ADR-08-sesion-web-bff.md) |
+| ADR-09 | Imágenes del catálogo en Postgres, re-codificadas a WebP y cacheadas en el borde | [`docs/adr/ADR-09`](docs/adr/ADR-09-media-en-postgres.md) |
 
 ## 4. Flujo de compra (vista de procesos)
 
@@ -179,9 +180,10 @@ docs/
   architecture/  adr/  services/
 ```
 
-Estado (Fases 1 y 2 completas): existen `packages/commons`, `packages/contracts`, `infra/`,
-`services/template`, `services/identity` y `services/gateway`; la web ya se autentica con identity
-(BFF, ADR-08) y el resto de sus datos sigue en Supabase hasta su fase. Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
+Estado (Fases 1 a 3 completas): existen `packages/commons`, `packages/contracts`, `infra/`,
+`services/template`, `services/identity`, `services/gateway` y `services/catalog`; la web se
+autentica con identity (BFF, ADR-08) y lee y administra el catálogo vía gateway. Fila virtual,
+reservas, órdenes, promociones y métricas siguen en Supabase hasta sus fases. Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
 Comandos y servicios locales: [`README.md`](README.md).
 
 Mientras dure la migración, la app actual sigue en `src/`. Se migra con patrón **strangler**: cada
