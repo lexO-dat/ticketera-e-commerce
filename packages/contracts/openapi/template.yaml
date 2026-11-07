@@ -1,0 +1,81 @@
+openapi: 3.1.0
+info:
+  title: template-service
+  version: 1.0.0
+  description: >
+    Contrato de la plantilla de servicio. Al crear un servicio con `npm run new:service`, se copia
+    como `openapi/<servicio>.yaml` y se reemplazan las rutas de ejemplo.
+servers:
+  - url: http://localhost:3000
+paths:
+  /health/live:
+    $ref: "./common.yaml#/paths/~1health~1live"
+  /health/ready:
+    $ref: "./common.yaml#/paths/~1health~1ready"
+  /v1/info:
+    get:
+      operationId: getInfo
+      summary: Nombre y versión del servicio
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: Información del servicio
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service, version]
+                properties:
+                  service: { type: string }
+                  version: { type: string }
+  /v1/notes:
+    post:
+      operationId: createNote
+      summary: Ejemplo de escritura transaccional con evento vía outbox
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "201":
+          description: Nota creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+        "400": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/notes/{id}:
+    get:
+      operationId: getNote
+      summary: Ejemplo de lectura
+      parameters:
+        - $ref: "./common.yaml#/components/parameters/RequestId"
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Nota
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+        "400": { $ref: "./common.yaml#/components/responses/Problem" }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
+components:
+  schemas:
+    Note:
+      type: object
+      required: [id, text, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        text: { type: string }
+        createdAt: { type: string, format: date-time }

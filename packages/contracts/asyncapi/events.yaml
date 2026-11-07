@@ -1,0 +1,578 @@
+asyncapi: 3.0.0
+info:
+  title: "Ticketera — eventos de dominio"
+  version: 1.0.0
+  description: >
+    Eventos publicados en RabbitMQ (exchange de tópicos `ticketera.events`) con el patrón outbox.
+    Entrega al-menos-una-vez: todo consumidor deduplica por `id` (inbox). Clave de enrutamiento
+    `<source>.<Tipo>.v<version>`. Un cambio incompatible en `data` publica una versión nueva y
+    convive con la anterior hasta que los consumidores migren.
+defaultContentType: application/json
+servers:
+  local:
+    host: localhost:5672
+    protocol: amqp
+    description: "RabbitMQ de infra/docker-compose.yml"
+channels:
+  TurnoCreado:
+    address: queue.TurnoCreado.v1
+    description: "Un comprador entró a la fila de un evento."
+    messages:
+      TurnoCreado:
+        $ref: "#/components/messages/TurnoCreado"
+  TurnoAdmitido:
+    address: queue.TurnoAdmitido.v1
+    description: "El admisor dio paso a un comprador; se emitió su token de admisión."
+    messages:
+      TurnoAdmitido:
+        $ref: "#/components/messages/TurnoAdmitido"
+  TurnoVencido:
+    address: queue.TurnoVencido.v1
+    description: "La ventana de compra de un admitido venció sin completar la compra."
+    messages:
+      TurnoVencido:
+        $ref: "#/components/messages/TurnoVencido"
+  TurnoCompletado:
+    address: queue.TurnoCompletado.v1
+    description: "El comprador terminó su compra y liberó el cupo."
+    messages:
+      TurnoCompletado:
+        $ref: "#/components/messages/TurnoCompletado"
+  ReservaCreada:
+    address: inventory.ReservaCreada.v1
+    description: "Reserva exclusiva creada (vence en 10 min, ADR-03)."
+    messages:
+      ReservaCreada:
+        $ref: "#/components/messages/ReservaCreada"
+  ReservaLiberada:
+    address: inventory.ReservaLiberada.v1
+    description: "Reserva liberada por pago rechazado, abandono o vencimiento."
+    messages:
+      ReservaLiberada:
+        $ref: "#/components/messages/ReservaLiberada"
+  ReservaVendida:
+    address: inventory.ReservaVendida.v1
+    description: "Reserva convertida en venta."
+    messages:
+      ReservaVendida:
+        $ref: "#/components/messages/ReservaVendida"
+  OrdenCreada:
+    address: orders.OrdenCreada.v1
+    description: "Orden creada en PENDING_PAYMENT con montos calculados en el servidor."
+    messages:
+      OrdenCreada:
+        $ref: "#/components/messages/OrdenCreada"
+  OrdenConfirmada:
+    address: orders.OrdenConfirmada.v1
+    description: "Pago autorizado dentro del plazo: la orden se confirma (RF10) y se emiten entradas (RF11)."
+    messages:
+      OrdenConfirmada:
+        $ref: "#/components/messages/OrdenConfirmada"
+  OrdenCancelada:
+    address: orders.OrdenCancelada.v1
+    description: "Orden cancelada (pago rechazado, reserva vencida o anulación)."
+    messages:
+      OrdenCancelada:
+        $ref: "#/components/messages/OrdenCancelada"
+  PagoAutorizado:
+    address: payments.PagoAutorizado.v1
+    description: "El adquirente autorizó el cobro."
+    messages:
+      PagoAutorizado:
+        $ref: "#/components/messages/PagoAutorizado"
+  PagoRechazado:
+    address: payments.PagoRechazado.v1
+    description: "El adquirente rechazó el cobro o expiró."
+    messages:
+      PagoRechazado:
+        $ref: "#/components/messages/PagoRechazado"
+  PagoReembolsado:
+    address: payments.PagoReembolsado.v1
+    description: "Reembolso total o parcial ejecutado."
+    messages:
+      PagoReembolsado:
+        $ref: "#/components/messages/PagoReembolsado"
+  EntradasEmitidas:
+    address: tickets.EntradasEmitidas.v1
+    description: "Entradas con QR firmado emitidas para una orden."
+    messages:
+      EntradasEmitidas:
+        $ref: "#/components/messages/EntradasEmitidas"
+  EntradaValidada:
+    address: tickets.EntradaValidada.v1
+    description: "Check-in atómico de una entrada en puerta (RF15)."
+    messages:
+      EntradaValidada:
+        $ref: "#/components/messages/EntradaValidada"
+  UsuarioRegistrado:
+    address: identity.UsuarioRegistrado.v1
+    description: "Cuenta creada."
+    messages:
+      UsuarioRegistrado:
+        $ref: "#/components/messages/UsuarioRegistrado"
+  VerificacionEmailSolicitada:
+    address: identity.VerificacionEmailSolicitada.v1
+    description: "Se debe enviar el enlace de verificación de email."
+    messages:
+      VerificacionEmailSolicitada:
+        $ref: "#/components/messages/VerificacionEmailSolicitada"
+  RecuperacionContrasenaSolicitada:
+    address: identity.RecuperacionContrasenaSolicitada.v1
+    description: "Se debe enviar el enlace de recuperación de contraseña."
+    messages:
+      RecuperacionContrasenaSolicitada:
+        $ref: "#/components/messages/RecuperacionContrasenaSolicitada"
+operations:
+  publishTurnoCreado:
+    action: send
+    summary: "Publicado por `queue`."
+    channel:
+      $ref: "#/channels/TurnoCreado"
+  publishTurnoAdmitido:
+    action: send
+    summary: "Publicado por `queue`; lo consumen `orders`."
+    channel:
+      $ref: "#/channels/TurnoAdmitido"
+  publishTurnoVencido:
+    action: send
+    summary: "Publicado por `queue`."
+    channel:
+      $ref: "#/channels/TurnoVencido"
+  publishTurnoCompletado:
+    action: send
+    summary: "Publicado por `queue`."
+    channel:
+      $ref: "#/channels/TurnoCompletado"
+  publishReservaCreada:
+    action: send
+    summary: "Publicado por `inventory`."
+    channel:
+      $ref: "#/channels/ReservaCreada"
+  publishReservaLiberada:
+    action: send
+    summary: "Publicado por `inventory`; lo consumen `orders`."
+    channel:
+      $ref: "#/channels/ReservaLiberada"
+  publishReservaVendida:
+    action: send
+    summary: "Publicado por `inventory`."
+    channel:
+      $ref: "#/channels/ReservaVendida"
+  publishOrdenCreada:
+    action: send
+    summary: "Publicado por `orders`."
+    channel:
+      $ref: "#/channels/OrdenCreada"
+  publishOrdenConfirmada:
+    action: send
+    summary: "Publicado por `orders`; lo consumen `tickets`, `notifications`."
+    channel:
+      $ref: "#/channels/OrdenConfirmada"
+  publishOrdenCancelada:
+    action: send
+    summary: "Publicado por `orders`."
+    channel:
+      $ref: "#/channels/OrdenCancelada"
+  publishPagoAutorizado:
+    action: send
+    summary: "Publicado por `payments`; lo consumen `orders`."
+    channel:
+      $ref: "#/channels/PagoAutorizado"
+  publishPagoRechazado:
+    action: send
+    summary: "Publicado por `payments`; lo consumen `orders`."
+    channel:
+      $ref: "#/channels/PagoRechazado"
+  publishPagoReembolsado:
+    action: send
+    summary: "Publicado por `payments`; lo consumen `orders`, `notifications`."
+    channel:
+      $ref: "#/channels/PagoReembolsado"
+  publishEntradasEmitidas:
+    action: send
+    summary: "Publicado por `tickets`; lo consumen `notifications`."
+    channel:
+      $ref: "#/channels/EntradasEmitidas"
+  publishEntradaValidada:
+    action: send
+    summary: "Publicado por `tickets`."
+    channel:
+      $ref: "#/channels/EntradaValidada"
+  publishUsuarioRegistrado:
+    action: send
+    summary: "Publicado por `identity`; lo consumen `notifications`."
+    channel:
+      $ref: "#/channels/UsuarioRegistrado"
+  publishVerificacionEmailSolicitada:
+    action: send
+    summary: "Publicado por `identity`; lo consumen `notifications`."
+    channel:
+      $ref: "#/channels/VerificacionEmailSolicitada"
+  publishRecuperacionContrasenaSolicitada:
+    action: send
+    summary: "Publicado por `identity`; lo consumen `notifications`."
+    channel:
+      $ref: "#/channels/RecuperacionContrasenaSolicitada"
+components:
+  schemas:
+    Money:
+      type: string
+      pattern: '^-?\d+$'
+      description: "Monto en CLP (entero) serializado como string."
+    Envelope:
+      type: object
+      required: [id, type, version, source, occurredAt, aggregateId, data]
+      properties:
+        id:
+          {
+            type: string,
+            format: uuid,
+            description: "Único; los consumidores deduplican por este campo",
+          }
+        type: { type: string, pattern: "^[A-Z][A-Za-z]+$" }
+        version: { type: integer, minimum: 1 }
+        source: { type: string, pattern: "^[a-z][a-z0-9-]*$" }
+        occurredAt: { type: string, format: date-time }
+        aggregateId: { type: string }
+        correlationId: { type: string }
+        data: { type: object }
+  messages:
+    TurnoCreado:
+      name: TurnoCreado
+      title: "TurnoCreado v1"
+      summary: "Un comprador entró a la fila de un evento."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: TurnoCreado }
+              source: { const: queue }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [eventId, userId, arrival]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  arrival: { type: integer, minimum: 0 }
+    TurnoAdmitido:
+      name: TurnoAdmitido
+      title: "TurnoAdmitido v1"
+      summary: "El admisor dio paso a un comprador; se emitió su token de admisión."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: TurnoAdmitido }
+              source: { const: queue }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [eventId, userId, jti, expiresAt]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  jti: { type: string }
+                  expiresAt: { type: string, format: date-time }
+    TurnoVencido:
+      name: TurnoVencido
+      title: "TurnoVencido v1"
+      summary: "La ventana de compra de un admitido venció sin completar la compra."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: TurnoVencido }
+              source: { const: queue }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [eventId, userId, jti]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  jti: { type: string }
+    TurnoCompletado:
+      name: TurnoCompletado
+      title: "TurnoCompletado v1"
+      summary: "El comprador terminó su compra y liberó el cupo."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: TurnoCompletado }
+              source: { const: queue }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [eventId, userId, jti]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  jti: { type: string }
+    ReservaCreada:
+      name: ReservaCreada
+      title: "ReservaCreada v1"
+      summary: "Reserva exclusiva creada (vence en 10 min, ADR-03)."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: ReservaCreada }
+              source: { const: inventory }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [reservationId, userId, itemId, quantity, expiresAt]
+                properties:
+                  reservationId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  itemId: { type: string, format: uuid }
+                  quantity: { type: integer, minimum: 0 }
+                  expiresAt: { type: string, format: date-time }
+    ReservaLiberada:
+      name: ReservaLiberada
+      title: "ReservaLiberada v1"
+      summary: "Reserva liberada por pago rechazado, abandono o vencimiento."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: ReservaLiberada }
+              source: { const: inventory }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [reservationId, reason]
+                properties:
+                  reservationId: { type: string, format: uuid }
+                  reason: { type: string }
+    ReservaVendida:
+      name: ReservaVendida
+      title: "ReservaVendida v1"
+      summary: "Reserva convertida en venta."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: ReservaVendida }
+              source: { const: inventory }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [reservationId, orderId]
+                properties:
+                  reservationId: { type: string, format: uuid }
+                  orderId: { type: string, format: uuid }
+    OrdenCreada:
+      name: OrdenCreada
+      title: "OrdenCreada v1"
+      summary: "Orden creada en PENDING_PAYMENT con montos calculados en el servidor."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: OrdenCreada }
+              source: { const: orders }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [orderId, userId, total]
+                properties:
+                  orderId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  total: { $ref: "#/components/schemas/Money" }
+    OrdenConfirmada:
+      name: OrdenConfirmada
+      title: "OrdenConfirmada v1"
+      summary: "Pago autorizado dentro del plazo: la orden se confirma (RF10) y se emiten entradas (RF11)."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: OrdenConfirmada }
+              source: { const: orders }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [orderId, userId, total]
+                properties:
+                  orderId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  total: { $ref: "#/components/schemas/Money" }
+    OrdenCancelada:
+      name: OrdenCancelada
+      title: "OrdenCancelada v1"
+      summary: "Orden cancelada (pago rechazado, reserva vencida o anulación)."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: OrdenCancelada }
+              source: { const: orders }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [orderId, reason]
+                properties:
+                  orderId: { type: string, format: uuid }
+                  reason: { type: string }
+    PagoAutorizado:
+      name: PagoAutorizado
+      title: "PagoAutorizado v1"
+      summary: "El adquirente autorizó el cobro."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: PagoAutorizado }
+              source: { const: payments }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [paymentId, orderId, amount]
+                properties:
+                  paymentId: { type: string, format: uuid }
+                  orderId: { type: string, format: uuid }
+                  amount: { $ref: "#/components/schemas/Money" }
+    PagoRechazado:
+      name: PagoRechazado
+      title: "PagoRechazado v1"
+      summary: "El adquirente rechazó el cobro o expiró."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: PagoRechazado }
+              source: { const: payments }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [paymentId, orderId, reason]
+                properties:
+                  paymentId: { type: string, format: uuid }
+                  orderId: { type: string, format: uuid }
+                  reason: { type: string }
+    PagoReembolsado:
+      name: PagoReembolsado
+      title: "PagoReembolsado v1"
+      summary: "Reembolso total o parcial ejecutado."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: PagoReembolsado }
+              source: { const: payments }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [paymentId, orderId, amount]
+                properties:
+                  paymentId: { type: string, format: uuid }
+                  orderId: { type: string, format: uuid }
+                  amount: { $ref: "#/components/schemas/Money" }
+    EntradasEmitidas:
+      name: EntradasEmitidas
+      title: "EntradasEmitidas v1"
+      summary: "Entradas con QR firmado emitidas para una orden."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: EntradasEmitidas }
+              source: { const: tickets }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [orderId, ticketIds]
+                properties:
+                  orderId: { type: string, format: uuid }
+                  ticketIds: { type: array, items: { type: string, format: uuid } }
+    EntradaValidada:
+      name: EntradaValidada
+      title: "EntradaValidada v1"
+      summary: "Check-in atómico de una entrada en puerta (RF15)."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: EntradaValidada }
+              source: { const: tickets }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [ticketId, validatedAt]
+                properties:
+                  ticketId: { type: string, format: uuid }
+                  validatedAt: { type: string, format: date-time }
+    UsuarioRegistrado:
+      name: UsuarioRegistrado
+      title: "UsuarioRegistrado v1"
+      summary: "Cuenta creada."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: UsuarioRegistrado }
+              source: { const: identity }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [userId, email]
+                properties:
+                  userId: { type: string, format: uuid }
+                  email: { type: string, format: email }
+    VerificacionEmailSolicitada:
+      name: VerificacionEmailSolicitada
+      title: "VerificacionEmailSolicitada v1"
+      summary: "Se debe enviar el enlace de verificación de email."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: VerificacionEmailSolicitada }
+              source: { const: identity }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [userId, email, verificationUrl]
+                properties:
+                  userId: { type: string, format: uuid }
+                  email: { type: string, format: email }
+                  verificationUrl: { type: string, format: uri }
+    RecuperacionContrasenaSolicitada:
+      name: RecuperacionContrasenaSolicitada
+      title: "RecuperacionContrasenaSolicitada v1"
+      summary: "Se debe enviar el enlace de recuperación de contraseña."
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              type: { const: RecuperacionContrasenaSolicitada }
+              source: { const: identity }
+              version: { const: 1 }
+              data:
+                type: object
+                required: [userId, email, resetUrl]
+                properties:
+                  userId: { type: string, format: uuid }
+                  email: { type: string, format: email }
+                  resetUrl: { type: string, format: uri }

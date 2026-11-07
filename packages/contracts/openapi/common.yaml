@@ -1,0 +1,109 @@
+openapi: 3.1.0
+info:
+  title: Ticketera — componentes comunes
+  version: 1.0.0
+  description: >
+    Componentes que reutilizan todos los contratos HTTP: errores RFC 9457, health checks,
+    cabeceras de correlación e idempotencia. Los servicios los referencian con `$ref`.
+paths:
+  /health/live:
+    get:
+      operationId: live
+      summary: El proceso está vivo
+      tags: [health]
+      responses:
+        "200":
+          description: Vivo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /health/ready:
+    get:
+      operationId: ready
+      summary: Puede atender tráfico (dependencias disponibles)
+      tags: [health]
+      responses:
+        "200":
+          description: Listo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+        "503":
+          description: Alguna dependencia no responde o el servicio se está apagando
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+components:
+  parameters:
+    RequestId:
+      name: x-request-id
+      in: header
+      required: false
+      description: Correlación de logs entre servicios. Si falta, el servicio genera uno.
+      schema: { type: string, pattern: "^[A-Za-z0-9._-]{8,128}$" }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        Obligatoria en todo POST que crea o cobra (ADR-04). Reintentar con la misma clave y el mismo
+        cuerpo devuelve la misma respuesta; con otro cuerpo responde 409 IDEMPOTENCY_CONFLICT.
+      schema: { type: string, minLength: 16, maxLength: 128 }
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+    Readiness:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ok, degraded, shutting_down] }
+        checks:
+          type: object
+          additionalProperties: { type: string, enum: [ok, fail] }
+    Problem:
+      type: object
+      description: RFC 9457 (application/problem+json). Los errores 5xx nunca incluyen detalle.
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, example: "urn:ticketera:error:conflict" }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          type: string
+          enum:
+            - VALIDATION
+            - UNAUTHENTICATED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - IDEMPOTENCY_CONFLICT
+            - PRECONDITION_FAILED
+            - PAYLOAD_TOO_LARGE
+            - RATE_LIMITED
+            - DEPENDENCY_UNAVAILABLE
+            - INTERNAL
+        detail: { type: string }
+        reason: { type: string, description: "Código de negocio, p. ej. SEAT_ALREADY_HELD" }
+        issues:
+          type: array
+          items:
+            type: object
+            required: [path, message]
+            properties:
+              path: { type: string }
+              message: { type: string }
+        requestId: { type: string }
+    Money:
+      type: string
+      pattern: "^-?\\d+$"
+      description: Monto en CLP (entero, sin decimales) serializado como string para no perder precisión.
+      example: "77000"
+  responses:
+    Problem:
+      description: Error
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
