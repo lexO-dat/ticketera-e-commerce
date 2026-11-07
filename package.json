@@ -1,5 +1,5 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "ticketera",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -9,7 +9,15 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "lint:backend": "eslint packages services tools scripts",
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build:backend": "npm run build --workspaces --if-present",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "infra:reset": "docker compose -f infra/docker-compose.yml down -v",
+    "new:service": "node scripts/new-service.mjs"
   },
   "overrides": {
     "rolldown": "1.2.1"
@@ -86,5 +94,13 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "8.1.5"
+  },
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "tools/*"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
   }
 }
