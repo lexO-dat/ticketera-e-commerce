@@ -25,7 +25,7 @@ type QueueView = {
 };
 
 export const joinQueue = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => schema.parse(input))
+  .validator((input: unknown) => schema.parse(input))
   .handler(async ({ data }): Promise<QueueView> => {
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
@@ -75,7 +75,7 @@ export const joinQueue = createServerFn({ method: "POST" })
   });
 
 export const queueStatus = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => schema.parse(input))
+  .validator((input: unknown) => schema.parse(input))
   .handler(async ({ data }) => readQueue(data.eventId, data.sessionToken));
 
 async function readQueue(eventId: string, sessionToken: string): Promise<QueueView> {

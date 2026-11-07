@@ -6,7 +6,13 @@ import { GhostButton } from "@/components/kit/PillButton";
 import { Caption } from "@/components/kit/Text";
 
 const NAV: {
-  to: "/admin" | "/admin/eventos" | "/admin/recintos" | "/admin/ordenes" | "/admin/promociones" | "/admin/equipo";
+  to:
+    | "/admin"
+    | "/admin/eventos"
+    | "/admin/recintos"
+    | "/admin/ordenes"
+    | "/admin/promociones"
+    | "/admin/equipo";
   label: string;
   exact?: boolean;
 }[] = [
@@ -35,7 +41,9 @@ export const Route = createFileRoute("/admin")({
   component: AdminLayout,
   errorComponent: ({ error }) => (
     <div className="p-10" role="alert">
-      <p className="text-body text-ember">{error.message}</p>
+      <p className="text-body text-ember">
+        {error instanceof Error ? error.message : String(error)}
+      </p>
     </div>
   ),
   notFoundComponent: () => <div className="p-10">Sección no encontrada.</div>,
