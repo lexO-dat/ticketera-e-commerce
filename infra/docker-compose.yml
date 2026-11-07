@@ -197,6 +197,36 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  catalog:
+    build:
+      context: ..
+      dockerfile: services/catalog/Dockerfile
+    init: true
+    # ADR-01/02: réplicas sin estado; la caché de lectura vive en Redis (compartida).
+    deploy:
+      replicas: 2
+    environment:
+      SERVICE_NAME: catalog
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://catalog:${PG_PASSWORD_CATALOG:-catalog-dev-password}@postgres-primary:5432/catalog
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
+      JWKS_URL: http://identity:3000/.well-known/jwks.json
+      CACHE_TTL_SECONDS: "30"
+      MEDIA_PUBLIC_PATH: /api/catalog/media
+      # Datos de demostración del prototipo (solo si el catálogo está vacío).
+      SEED_DEMO_DATA: ${CATALOG_SEED_DEMO_DATA:-true}
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis-primary:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      identity:
+        condition: service_healthy
+
   gateway:
     build:
       context: ..
@@ -209,6 +239,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
       # El DNS de Docker reparte entre las réplicas de identity.
       IDENTITY_URLS: http://identity:3000
+      CATALOG_URLS: http://catalog:3000
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost:8443}
     ports:
       # La web (BFF) en desarrollo llama al gateway directo; el navegador entra por Nginx.
@@ -217,6 +248,8 @@ services:
       redis-primary:
         condition: service_healthy
       identity:
+        condition: service_healthy
+      catalog:
         condition: service_healthy
 
   # Plantilla de servicio: `docker compose --profile template up -d --build template`.

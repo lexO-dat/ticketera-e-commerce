@@ -14,6 +14,7 @@ export interface AppDependencies {
   config: Pick<
     Config,
     | "IDENTITY_URLS"
+    | "CATALOG_URLS"
     | "CORS_ORIGINS"
     | "TRUST_PROXY"
     | "UPSTREAM_TIMEOUT_MS"

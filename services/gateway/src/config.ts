@@ -15,6 +15,8 @@ const schema = baseServiceEnv.extend({
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
   /** Réplicas de identity separadas por coma: el gateway balancea entre ellas (ADR-01). */
   IDENTITY_URLS: urlList,
+  /** Réplicas de catalog. */
+  CATALOG_URLS: urlList,
   /** Orígenes de navegador permitidos (CORS) separados por coma; vacío = ninguno. */
   CORS_ORIGINS: z
     .string()

@@ -13,7 +13,9 @@ export interface UpstreamRoute {
   roles?: Role[];
 }
 
-export function upstreamRoutes(config: Pick<Config, "IDENTITY_URLS">): UpstreamRoute[] {
+export function upstreamRoutes(
+  config: Pick<Config, "IDENTITY_URLS" | "CATALOG_URLS">,
+): UpstreamRoute[] {
   return [
     { prefix: "/auth", upstreams: config.IDENTITY_URLS, rewritePrefix: "/v1/auth" },
     {
@@ -23,5 +25,14 @@ export function upstreamRoutes(config: Pick<Config, "IDENTITY_URLS">): UpstreamR
       roles: ["admin"],
     },
     { prefix: "/.well-known", upstreams: config.IDENTITY_URLS, rewritePrefix: "/.well-known" },
+    // Administración del catálogo: el servicio además restringe por rol y dueño de cada recurso.
+    {
+      prefix: "/catalog/admin",
+      upstreams: config.CATALOG_URLS,
+      rewritePrefix: "/v1/admin",
+      roles: ["admin", "organizer", "seller"],
+    },
+    // Lectura pública (cacheada en catalog) e ItemVendible.
+    { prefix: "/catalog", upstreams: config.CATALOG_URLS, rewritePrefix: "/v1" },
   ];
 }

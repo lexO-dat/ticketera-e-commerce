@@ -62,6 +62,7 @@ describe("gateway", () => {
       verifyToken: createTokenVerifier({ getKey: localKeySet(jwks) }),
       config: {
         IDENTITY_URLS: [`http://127.0.0.1:${port}`],
+        CATALOG_URLS: [`http://127.0.0.1:${port}`],
         CORS_ORIGINS: ["https://localhost:8443"],
         TRUST_PROXY: ["127.0.0.1"],
         UPSTREAM_TIMEOUT_MS: 2_000,
@@ -134,6 +135,28 @@ describe("gateway", () => {
     expect(received.at(-1)!.headers.authorization).toBe(`Bearer ${admin}`);
   });
 
+  it("enruta el catálogo público sin sesión y su administración solo con rol de gestión", async () => {
+    const list = await gateway.inject({ url: "/catalog/events?sort=price" });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().upstreamUrl).toBe("/v1/events?sort=price");
+
+    expect((await gateway.inject({ url: "/catalog/admin/events" })).statusCode).toBe(401);
+    const customer = await token(["customer"]);
+    const denied = await gateway.inject({
+      url: "/catalog/admin/events",
+      headers: { authorization: `Bearer ${customer}` },
+    });
+    expect(denied.statusCode).toBe(403);
+    for (const role of ["admin", "organizer", "seller"]) {
+      const ok = await gateway.inject({
+        url: "/catalog/admin/events",
+        headers: { authorization: `Bearer ${await token([role])}` },
+      });
+      expect(ok.statusCode, role).toBe(200);
+      expect(ok.json().upstreamUrl).toBe("/v1/admin/events");
+    }
+  });
+
   it("no permite escapar del prefijo con ../", async () => {
     const response = await gateway.inject({ url: "/auth/../admin/users" });
     expect([400, 401, 404]).toContain(response.statusCode);
@@ -190,6 +213,7 @@ describe("gateway", () => {
       },
       config: {
         IDENTITY_URLS: ["http://127.0.0.1:1"],
+        CATALOG_URLS: ["http://127.0.0.1:1"],
         CORS_ORIGINS: [],
         TRUST_PROXY: [],
         UPSTREAM_TIMEOUT_MS: 1_000,
