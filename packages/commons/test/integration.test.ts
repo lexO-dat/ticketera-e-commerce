@@ -211,14 +211,16 @@ describe.skipIf(!AMQP_URL)("rabbitmq", () => {
   });
 
   it("publica con confirmación y entrega al consumidor suscrito", async () => {
+    let deliver!: (event: EventEnvelope) => void;
     const received = new Promise<EventEnvelope>((resolve) => {
-      void bus.subscribe({
-        queue: `commons-test.ok.${suffix}`,
-        bindings: [`commons.PruebaOk${suffix.replace(/\d/g, "X")}.*`],
-        handler: async (event) => resolve(event),
-      });
+      deliver = resolve;
     });
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Se publica cuando la cola y su binding ya existen (declarar una cola quorum puede tardar).
+    await bus.subscribe({
+      queue: `commons-test.ok.${suffix}`,
+      bindings: [`commons.PruebaOk${suffix.replace(/\d/g, "X")}.*`],
+      handler: async (event) => deliver(event),
+    });
     const event = createEvent({
       type: `PruebaOk${suffix.replace(/\d/g, "X")}`,
       source: "commons",
