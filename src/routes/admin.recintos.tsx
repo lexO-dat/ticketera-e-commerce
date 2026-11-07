@@ -31,6 +31,7 @@ const emptySection = {
   h: 200,
   seatRows: 8,
   seatsPerRow: 12,
+  regenerateSeats: false,
 };
 
 function AdminVenuesPage() {
@@ -80,11 +81,12 @@ function AdminVenuesPage() {
           h: sectionForm.h,
           seatRows: sectionForm.kind === "seated" ? sectionForm.seatRows : 0,
           seatsPerRow: sectionForm.kind === "seated" ? sectionForm.seatsPerRow : 0,
+          regenerateSeats: sectionForm.regenerateSeats,
         },
       }),
     onSuccess: () => {
       setSectionForm(emptySection);
-      setMessage("Sector guardado y butacas generadas");
+      setMessage("Sector guardado");
       refresh();
     },
     onError: (e: Error) => setMessage(e.message),
@@ -205,6 +207,7 @@ function AdminVenuesPage() {
                               h: section.shape_h,
                               seatRows: 8,
                               seatsPerRow: 12,
+                              regenerateSeats: false,
                             })
                           }
                         >
@@ -259,7 +262,12 @@ function AdminVenuesPage() {
                         />
                       </Field>
                     ) : (
-                      <Field label="Filas × asientos">
+                      <Field
+                        label="Filas × asientos"
+                        {...(sectionForm.id
+                          ? { hint: "Al editar, las butacas solo se regeneran si lo marcas abajo." }
+                          : {})}
+                      >
                         <div className="flex gap-3">
                           <TextInput
                             type="number"
@@ -274,6 +282,18 @@ function AdminVenuesPage() {
                             }
                           />
                         </div>
+                        {sectionForm.id ? (
+                          <label className="mt-3 flex items-center gap-2 text-body">
+                            <input
+                              type="checkbox"
+                              checked={sectionForm.regenerateSeats}
+                              onChange={(e) =>
+                                setSectionForm({ ...sectionForm, regenerateSeats: e.target.checked })
+                              }
+                            />
+                            Regenerar butacas (no se permite si el sector ya tiene entradas)
+                          </label>
+                        ) : null}
                       </Field>
                     )}
                   </div>

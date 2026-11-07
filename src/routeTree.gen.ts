@@ -24,6 +24,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminEquipoRouteImport } from './routes/admin.equipo'
 import { Route as AdminEventosRouteImport } from './routes/admin.eventos'
 import { Route as AdminOrdenesRouteImport } from './routes/admin.ordenes'
+import { Route as AdminProductosRouteImport } from './routes/admin.productos'
 import { Route as AdminPromocionesRouteImport } from './routes/admin.promociones'
 import { Route as AdminRecintosRouteImport } from './routes/admin.recintos'
 import { Route as ComprarDateIdRouteImport } from './routes/comprar.$dateId'
@@ -106,6 +107,11 @@ const AdminOrdenesRoute = AdminOrdenesRouteImport.update({
   path: '/ordenes',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminProductosRoute = AdminProductosRouteImport.update({
+  id: '/productos',
+  path: '/productos',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminPromocionesRoute = AdminPromocionesRouteImport.update({
   id: '/promociones',
   path: '/promociones',
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/admin/equipo': typeof AdminEquipoRoute
   '/admin/eventos': typeof AdminEventosRoute
   '/admin/ordenes': typeof AdminOrdenesRoute
+  '/admin/productos': typeof AdminProductosRoute
   '/admin/promociones': typeof AdminPromocionesRoute
   '/admin/recintos': typeof AdminRecintosRoute
   '/comprar/$dateId': typeof ComprarDateIdRoute
@@ -174,6 +181,7 @@ export interface FileRoutesByTo {
   '/admin/equipo': typeof AdminEquipoRoute
   '/admin/eventos': typeof AdminEventosRoute
   '/admin/ordenes': typeof AdminOrdenesRoute
+  '/admin/productos': typeof AdminProductosRoute
   '/admin/promociones': typeof AdminPromocionesRoute
   '/admin/recintos': typeof AdminRecintosRoute
   '/comprar/$dateId': typeof ComprarDateIdRoute
@@ -198,6 +206,7 @@ export interface FileRoutesById {
   '/admin/equipo': typeof AdminEquipoRoute
   '/admin/eventos': typeof AdminEventosRoute
   '/admin/ordenes': typeof AdminOrdenesRoute
+  '/admin/productos': typeof AdminProductosRoute
   '/admin/promociones': typeof AdminPromocionesRoute
   '/admin/recintos': typeof AdminRecintosRoute
   '/comprar/$dateId': typeof ComprarDateIdRoute
@@ -223,6 +232,7 @@ export interface FileRouteTypes {
     | '/admin/equipo'
     | '/admin/eventos'
     | '/admin/ordenes'
+    | '/admin/productos'
     | '/admin/promociones'
     | '/admin/recintos'
     | '/comprar/$dateId'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
     | '/admin/equipo'
     | '/admin/eventos'
     | '/admin/ordenes'
+    | '/admin/productos'
     | '/admin/promociones'
     | '/admin/recintos'
     | '/comprar/$dateId'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '/admin/equipo'
     | '/admin/eventos'
     | '/admin/ordenes'
+    | '/admin/productos'
     | '/admin/promociones'
     | '/admin/recintos'
     | '/comprar/$dateId'
@@ -402,6 +414,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOrdenesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/productos': {
+      id: '/admin/productos'
+      path: '/productos'
+      fullPath: '/admin/productos'
+      preLoaderRoute: typeof AdminProductosRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/promociones': {
       id: '/admin/promociones'
       path: '/promociones'
@@ -451,6 +470,7 @@ interface AdminRouteChildren {
   AdminEquipoRoute: typeof AdminEquipoRoute
   AdminEventosRoute: typeof AdminEventosRoute
   AdminOrdenesRoute: typeof AdminOrdenesRoute
+  AdminProductosRoute: typeof AdminProductosRoute
   AdminPromocionesRoute: typeof AdminPromocionesRoute
   AdminRecintosRoute: typeof AdminRecintosRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -460,6 +480,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminEquipoRoute: AdminEquipoRoute,
   AdminEventosRoute: AdminEventosRoute,
   AdminOrdenesRoute: AdminOrdenesRoute,
+  AdminProductosRoute: AdminProductosRoute,
   AdminPromocionesRoute: AdminPromocionesRoute,
   AdminRecintosRoute: AdminRecintosRoute,
   AdminIndexRoute: AdminIndexRoute,

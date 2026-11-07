@@ -11,6 +11,7 @@ const NAV: {
     | "/admin"
     | "/admin/eventos"
     | "/admin/recintos"
+    | "/admin/productos"
     | "/admin/ordenes"
     | "/admin/promociones"
     | "/admin/equipo";
@@ -20,6 +21,7 @@ const NAV: {
   { to: "/admin", label: "Dashboard", exact: true },
   { to: "/admin/eventos", label: "Eventos" },
   { to: "/admin/recintos", label: "Recintos y mapas" },
+  { to: "/admin/productos", label: "Productos" },
   { to: "/admin/ordenes", label: "Órdenes" },
   { to: "/admin/promociones", label: "Promociones" },
   { to: "/admin/equipo", label: "Equipo" },

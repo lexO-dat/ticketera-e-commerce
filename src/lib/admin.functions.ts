@@ -2,37 +2,60 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireAuth } from "@/lib/auth/middleware";
+import type { ApiEvent, ApiVenue } from "@/lib/catalog.server";
 
 export const adminOverview = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const { legacy } = await import("./catalog.server");
 
-    const [
-      { data: orders },
-      { data: events },
-      { data: metrics },
-      { data: types },
-      { data: queues },
-    ] = await Promise.all([
-      db
-        .from("orders")
-        .select("id, order_code, buyer_name, buyer_email, total, status, created_at")
-        .order("created_at", { ascending: false })
-        .limit(300),
-      db.from("events").select("id, title, slug, status, category"),
-      db.from("event_metrics").select("event_id, kind, quantity, amount, created_at").limit(5000),
-      db.from("ticket_types").select("id, event_date_id, capacity, sold, price, service_fee"),
-      db.from("queue_sessions").select("event_id, state"),
-    ]);
+    // Catálogo: microservicio catalog. Órdenes, métricas y fila: prototipo hasta sus fases.
+    const { items: events } = await gatewayFetch<{ items: ApiEvent[] }>("/catalog/admin/events", {
+      accessToken: context.accessToken,
+    });
+    const empty = {
+      orders: [] as {
+        id: string;
+        order_code: string;
+        buyer_name: string;
+        buyer_email: string;
+        total: number | string;
+        status: string;
+        created_at: string;
+      }[],
+      metrics: [] as {
+        event_id: string;
+        kind: string;
+        quantity: number;
+        amount: number | string;
+        created_at: string;
+      }[],
+      queues: [] as { event_id: string; state: string }[],
+    };
+    const { orders, metrics, queues } = await legacy(async () => {
+      const { adminDb } = await import("./db.server");
+      const db = await adminDb();
+      const [{ data: orders }, { data: metrics }, { data: queues }] = await Promise.all([
+        db
+          .from("orders")
+          .select("id, order_code, buyer_name, buyer_email, total, status, created_at")
+          .order("created_at", { ascending: false })
+          .limit(300),
+        db.from("event_metrics").select("event_id, kind, quantity, amount, created_at").limit(5000),
+        db.from("queue_sessions").select("event_id, state"),
+      ]);
+      return { orders: orders ?? [], metrics: metrics ?? [], queues: queues ?? [] };
+    }, empty);
 
-    const paid = (orders ?? []).filter((o) => o.status === "paid");
+    const paid = orders.filter((o) => o.status === "paid");
     const revenue = paid.reduce((s, o) => s + Number(o.total), 0);
-    const ticketsSold = (types ?? []).reduce((s, t) => s + t.sold, 0);
-    const capacity = (types ?? []).reduce((s, t) => s + t.capacity, 0);
+    const types = events.flatMap((e) => e.dates.flatMap((d) => d.ticketTypes));
+    // Vendidos: los informa inventory (Fase 4).
+    const ticketsSold = 0;
+    const capacity = types.reduce((s, t) => s + t.capacity, 0);
 
     const days = new Map<string, { date: string; revenue: number; orders: number }>();
     for (const order of paid) {
@@ -45,7 +68,7 @@ export const adminOverview = createServerFn({ method: "GET" })
 
     const funnel = { view: 0, add_to_cart: 0, checkout: 0, purchase: 0 } as Record<string, number>;
     const perEvent = new Map<string, { views: number; revenue: number }>();
-    for (const m of metrics ?? []) {
+    for (const m of metrics) {
       funnel[m.kind] = (funnel[m.kind] ?? 0) + m.quantity;
       const entry = perEvent.get(m.event_id) ?? { views: 0, revenue: 0 };
       if (m.kind === "view") entry.views += m.quantity;
@@ -53,7 +76,7 @@ export const adminOverview = createServerFn({ method: "GET" })
       perEvent.set(m.event_id, entry);
     }
 
-    const topEvents = (events ?? [])
+    const topEvents = events
       .map((e) => ({
         id: e.id,
         title: e.title,
@@ -66,7 +89,7 @@ export const adminOverview = createServerFn({ method: "GET" })
       .slice(0, 6);
 
     const queueCounts = { waiting: 0, active: 0, expired: 0 } as Record<string, number>;
-    for (const q of queues ?? []) queueCounts[q.state] = (queueCounts[q.state] ?? 0) + 1;
+    for (const q of queues) queueCounts[q.state] = (queueCounts[q.state] ?? 0) + 1;
 
     return {
       kpis: {
@@ -76,34 +99,89 @@ export const adminOverview = createServerFn({ method: "GET" })
         capacity,
         occupancy: capacity > 0 ? ticketsSold / capacity : 0,
         avgTicket: paid.length > 0 ? revenue / paid.length : 0,
-        publishedEvents: (events ?? []).filter((e) => e.status === "published").length,
+        publishedEvents: events.filter((e) => e.status === "published").length,
       },
       series: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-14),
       funnel,
       topEvents,
       queueCounts,
-      recentOrders: (orders ?? []).slice(0, 8),
+      recentOrders: orders.slice(0, 8),
     };
   });
+
+/** Evento del catálogo con la forma que espera el panel (heredada del prototipo). */
+function toAdminEvent(event: ApiEvent, queue: Record<string, QueueConfigRow>) {
+  return {
+    id: event.id,
+    slug: event.slug,
+    title: event.title,
+    artist: event.artist,
+    category: event.category as (typeof EVENT_CATEGORIES)[number],
+    status: event.status as (typeof EVENT_STATUSES)[number],
+    featured: event.featured,
+    image_id: event.imageId,
+    image_url: event.imageUrl,
+    description: event.description,
+    urgency_note: event.urgencyNote,
+    age_restriction: event.ageRestriction,
+    event_dates: event.dates.map((date) => ({
+      id: date.id,
+      starts_at: date.startsAt,
+      doors_at: date.doorsAt,
+      on_sale: date.onSale,
+      venue_id: date.venue.id,
+      venues: { name: date.venue.name, city: date.venue.city },
+      ticket_types: date.ticketTypes.map((type) => ({
+        id: type.id,
+        name: type.name,
+        price: Number(type.price),
+        service_fee: Number(type.fee),
+        capacity: type.capacity,
+        // Vendidos: los informa inventory (Fase 4).
+        sold: 0,
+        section_id: type.sectionId,
+      })),
+    })),
+    queue_config: queue[event.id] ?? null,
+  };
+}
+
+type QueueConfigRow = {
+  enabled: boolean;
+  concurrent_slots: number;
+  window_minutes: number;
+  waiting_message: string | null;
+  simulated_queue_size: number;
+};
+
+const EVENT_CATEGORIES = ["conciertos", "deportes", "familia", "festivales", "teatro"] as const;
+const EVENT_STATUSES = ["draft", "published", "soldout", "archived"] as const;
 
 export const adminEvents = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { data, error } = await db
-      .from("events")
-      .select(
-        `id, slug, title, artist, category, status, featured, image_url, description, urgency_note, age_restriction,
-         event_dates ( id, starts_at, doors_at, on_sale, venue_id, venues ( name, city ),
-           ticket_types ( id, name, price, service_fee, capacity, sold, section_id ) ),
-         queue_config ( enabled, concurrent_slots, window_minutes, waiting_message, simulated_queue_size )`,
-      )
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    return data ?? [];
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const { legacy } = await import("./catalog.server");
+    const { items } = await gatewayFetch<{ items: ApiEvent[] }>("/catalog/admin/events", {
+      accessToken: context.accessToken,
+    });
+    // Configuración de la fila virtual: sigue en el prototipo hasta la Fase 4 (queue).
+    const queue = await legacy(
+      async () => {
+        const { adminDb } = await import("./db.server");
+        const db = await adminDb();
+        const { data } = await db
+          .from("queue_config")
+          .select(
+            "event_id, enabled, concurrent_slots, window_minutes, waiting_message, simulated_queue_size",
+          );
+        return Object.fromEntries((data ?? []).map((row) => [row.event_id, row]));
+      },
+      {} as Record<string, QueueConfigRow>,
+    );
+    return items.map((event) => toAdminEvent(event, queue));
   });
 
 export const adminSaveEvent = createServerFn({ method: "POST" })
@@ -114,10 +192,10 @@ export const adminSaveEvent = createServerFn({ method: "POST" })
         id: z.string().uuid().nullable().optional(),
         title: z.string().min(2).max(140),
         artist: z.string().max(140).nullable().optional(),
-        category: z.enum(["conciertos", "deportes", "familia", "festivales", "teatro"]),
+        category: z.enum(EVENT_CATEGORIES),
         description: z.string().max(4000).nullable().optional(),
-        imageUrl: z.string().max(500).nullable().optional(),
-        status: z.enum(["draft", "published", "soldout", "archived"]),
+        imageId: z.string().uuid().nullable().optional(),
+        status: z.enum(EVENT_STATUSES),
         featured: z.boolean(),
         urgencyNote: z.string().max(140).nullable().optional(),
         ageRestriction: z.string().max(60).nullable().optional(),
@@ -125,38 +203,25 @@ export const adminSaveEvent = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { assertAdmin, slugify } = await import("./admin.server");
+    const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-
-    const payload = {
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const body = {
       title: data.title,
       artist: data.artist ?? null,
       category: data.category,
       description: data.description ?? null,
-      image_url: data.imageUrl ?? null,
+      imageId: data.imageId ?? null,
       status: data.status,
       featured: data.featured,
-      urgency_note: data.urgencyNote ?? null,
-      age_restriction: data.ageRestriction ?? null,
+      urgencyNote: data.urgencyNote ?? null,
+      ageRestriction: data.ageRestriction ?? null,
     };
-
-    if (data.id) {
-      const { error } = await db.from("events").update(payload).eq("id", data.id);
-      if (error) throw new Error(error.message);
-      return { id: data.id };
-    }
-
-    const slug = `${slugify(data.title)}-${Math.random().toString(36).slice(2, 6)}`;
-    const { data: created, error } = await db
-      .from("events")
-      .insert({ ...payload, slug })
-      .select("id")
-      .single();
-    if (error || !created) throw new Error(error?.message ?? "No se pudo crear el evento");
-    await db.from("queue_config").insert({ event_id: created.id });
-    return { id: created.id };
+    const saved = await gatewayFetch<ApiEvent>(
+      data.id ? `/catalog/admin/events/${data.id}` : "/catalog/admin/events",
+      { method: data.id ? "PUT" : "POST", body, accessToken: context.accessToken },
+    );
+    return { id: saved.id };
   });
 
 export const adminDeleteEvent = createServerFn({ method: "POST" })
@@ -165,11 +230,34 @@ export const adminDeleteEvent = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { error } = await db.from("events").delete().eq("id", data.id);
-    if (error) throw new Error(error.message);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch(`/catalog/admin/events/${data.id}`, {
+      method: "DELETE",
+      accessToken: context.accessToken,
+    });
     return { ok: true };
+  });
+
+/** Imagen para eventos y productos: el catálogo la valida y re-codifica (media propia). */
+export const adminUploadImage = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .validator((input: unknown) => {
+    if (!(input instanceof FormData)) throw new Error("Adjunta una imagen");
+    const file = input.get("file");
+    if (!(file instanceof File) || file.size === 0) throw new Error("Adjunta una imagen");
+    if (file.size > 8 * 1024 * 1024) throw new Error("La imagen supera los 8 MB");
+    return file;
+  })
+  .handler(async ({ data, context }) => {
+    const { assertAdmin } = await import("./admin.server");
+    assertAdmin(context.roles);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const form = new FormData();
+    form.append("file", data, data.name || "imagen");
+    return gatewayFetch<{ id: string; url: string; width: number; height: number }>(
+      "/catalog/admin/media",
+      { method: "POST", form, accessToken: context.accessToken },
+    );
   });
 
 export const adminSaveQueue = createServerFn({ method: "POST" })
@@ -234,8 +322,8 @@ export const adminSaveDate = createServerFn({ method: "POST" })
             z.object({
               sectionId: z.string().uuid(),
               name: z.string().min(1).max(80),
-              price: z.number().min(0),
-              fee: z.number().min(0),
+              price: z.number().int().min(0),
+              fee: z.number().int().min(0),
               capacity: z.number().int().min(0),
             }),
           )
@@ -246,51 +334,25 @@ export const adminSaveDate = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-
-    const payload = {
-      event_id: data.eventId,
-      venue_id: data.venueId,
-      starts_at: new Date(data.startsAt).toISOString(),
-      doors_at: data.doorsAt ? new Date(data.doorsAt).toISOString() : null,
-      on_sale: data.onSale,
-    };
-
-    let dateId = data.id ?? null;
-    if (dateId) {
-      const { error } = await db.from("event_dates").update(payload).eq("id", dateId);
-      if (error) throw new Error(error.message);
-    } else {
-      const { data: created, error } = await db
-        .from("event_dates")
-        .insert(payload)
-        .select("id")
-        .single();
-      if (error || !created) throw new Error(error?.message ?? "No se pudo crear la fecha");
-      dateId = created.id;
-    }
-
-    const { data: existing } = await db
-      .from("ticket_types")
-      .select("id, section_id")
-      .eq("event_date_id", dateId);
-
-    for (const price of data.prices) {
-      const match = (existing ?? []).find((t) => t.section_id === price.sectionId);
-      const row = {
-        event_date_id: dateId,
-        section_id: price.sectionId,
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const body = {
+      venueId: data.venueId,
+      startsAt: new Date(data.startsAt).toISOString(),
+      doorsAt: data.doorsAt ? new Date(data.doorsAt).toISOString() : null,
+      onSale: data.onSale,
+      ticketTypes: data.prices.map((price) => ({
+        sectionId: price.sectionId,
         name: price.name,
         price: price.price,
-        service_fee: price.fee,
+        fee: price.fee,
         capacity: price.capacity,
-      };
-      if (match) await db.from("ticket_types").update(row).eq("id", match.id);
-      else await db.from("ticket_types").insert(row);
-    }
-
-    return { id: dateId };
+      })),
+    };
+    const event = await gatewayFetch<ApiEvent>(
+      data.id ? `/catalog/admin/dates/${data.id}` : `/catalog/admin/events/${data.eventId}/dates`,
+      { method: data.id ? "PUT" : "POST", body, accessToken: context.accessToken },
+    );
+    return { id: data.id ?? event.dates.at(-1)?.id ?? null };
   });
 
 export const adminDeleteDate = createServerFn({ method: "POST" })
@@ -299,10 +361,11 @@ export const adminDeleteDate = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { error } = await db.from("event_dates").delete().eq("id", data.id);
-    if (error) throw new Error(error.message);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch(`/catalog/admin/dates/${data.id}`, {
+      method: "DELETE",
+      accessToken: context.accessToken,
+    });
     return { ok: true };
   });
 
@@ -311,17 +374,30 @@ export const adminVenues = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { data, error } = await db
-      .from("venues")
-      .select(
-        `id, name, city, address, capacity, map_width, map_height,
-         venue_sections ( id, name, kind, capacity, sort_order, shape_x, shape_y, shape_w, shape_h )`,
-      )
-      .order("name");
-    if (error) throw new Error(error.message);
-    return data ?? [];
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const { items } = await gatewayFetch<{ items: ApiVenue[] }>("/catalog/admin/venues", {
+      accessToken: context.accessToken,
+    });
+    return items.map((venue) => ({
+      id: venue.id,
+      name: venue.name,
+      city: venue.city,
+      address: venue.address,
+      capacity: venue.capacity,
+      map_width: venue.map.width,
+      map_height: venue.map.height,
+      venue_sections: venue.sections.map((section) => ({
+        id: section.id,
+        name: section.name,
+        kind: section.kind,
+        capacity: section.capacity,
+        sort_order: section.sortOrder,
+        shape_x: section.shape.x,
+        shape_y: section.shape.y,
+        shape_w: section.shape.w,
+        shape_h: section.shape.h,
+      })),
+    }));
   });
 
 export const adminSaveVenue = createServerFn({ method: "POST" })
@@ -340,22 +416,18 @@ export const adminSaveVenue = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const payload = {
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const body = {
       name: data.name,
       city: data.city,
       address: data.address ?? null,
       capacity: data.capacity,
     };
-    if (data.id) {
-      const { error } = await db.from("venues").update(payload).eq("id", data.id);
-      if (error) throw new Error(error.message);
-      return { id: data.id };
-    }
-    const { data: created, error } = await db.from("venues").insert(payload).select("id").single();
-    if (error || !created) throw new Error(error?.message ?? "No se pudo crear el recinto");
-    return { id: created.id };
+    const venue = await gatewayFetch<ApiVenue>(
+      data.id ? `/catalog/admin/venues/${data.id}` : "/catalog/admin/venues",
+      { method: data.id ? "PUT" : "POST", body, accessToken: context.accessToken },
+    );
+    return { id: venue.id };
   });
 
 export const adminSaveSection = createServerFn({ method: "POST" })
@@ -375,57 +447,35 @@ export const adminSaveSection = createServerFn({ method: "POST" })
         h: z.number().min(10),
         seatRows: z.number().int().min(0).max(40).default(0),
         seatsPerRow: z.number().int().min(0).max(40).default(0),
+        /** Al editar un sector numerado, solo se regeneran las butacas si se pide. */
+        regenerateSeats: z.boolean().default(false),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { assertAdmin, seatGrid } = await import("./admin.server");
+    const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-
-    const payload = {
-      venue_id: data.venueId,
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const wantsSeats =
+      data.kind === "seated" &&
+      data.seatRows > 0 &&
+      data.seatsPerRow > 0 &&
+      (!data.id || data.regenerateSeats);
+    const body = {
       name: data.name,
       kind: data.kind,
       capacity: data.capacity,
-      sort_order: data.sortOrder,
-      shape_x: data.x,
-      shape_y: data.y,
-      shape_w: data.w,
-      shape_h: data.h,
+      sortOrder: data.sortOrder,
+      shape: { x: data.x, y: data.y, w: data.w, h: data.h },
+      ...(wantsSeats ? { seatGrid: { rows: data.seatRows, perRow: data.seatsPerRow } } : {}),
     };
-
-    let sectionId = data.id ?? null;
-    if (sectionId) {
-      const { error } = await db.from("venue_sections").update(payload).eq("id", sectionId);
-      if (error) throw new Error(error.message);
-    } else {
-      const { data: created, error } = await db
-        .from("venue_sections")
-        .insert(payload)
-        .select("id")
-        .single();
-      if (error || !created) throw new Error(error?.message ?? "No se pudo crear el sector");
-      sectionId = created.id;
-    }
-
-    if (data.kind === "seated" && data.seatRows > 0 && data.seatsPerRow > 0) {
-      await db.from("venue_seats").delete().eq("section_id", sectionId);
-      const seats = seatGrid({
-        rows: data.seatRows,
-        perRow: data.seatsPerRow,
-        x: data.x + 12,
-        y: data.y + 12,
-        w: Math.max(10, data.w - 24),
-        h: Math.max(10, data.h - 24),
-      }).map((seat) => ({ ...seat, section_id: sectionId }));
-      const { error } = await db.from("venue_seats").insert(seats);
-      if (error) throw new Error(error.message);
-      await db.from("venue_sections").update({ capacity: seats.length }).eq("id", sectionId);
-    }
-
-    return { id: sectionId };
+    const section = await gatewayFetch<{ id: string }>(
+      data.id
+        ? `/catalog/admin/sections/${data.id}`
+        : `/catalog/admin/venues/${data.venueId}/sections`,
+      { method: data.id ? "PUT" : "POST", body, accessToken: context.accessToken },
+    );
+    return { id: section.id };
   });
 
 export const adminDeleteSection = createServerFn({ method: "POST" })
@@ -434,10 +484,11 @@ export const adminDeleteSection = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { error } = await db.from("venue_sections").delete().eq("id", data.id);
-    if (error) throw new Error(error.message);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch(`/catalog/admin/sections/${data.id}`, {
+      method: "DELETE",
+      accessToken: context.accessToken,
+    });
     return { ok: true };
   });
 
@@ -449,13 +500,98 @@ export const adminToggleSeat = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { error } = await db
-      .from("venue_seats")
-      .update({ blocked: data.blocked })
-      .eq("id", data.seatId);
-    if (error) throw new Error(error.message);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch(`/catalog/admin/seats/${data.seatId}`, {
+      method: "PUT",
+      body: { blocked: data.blocked },
+      accessToken: context.accessToken,
+    });
+    return { ok: true };
+  });
+
+export type AdminProduct = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  sku: string | null;
+  price: string;
+  fee: string;
+  imageId: string | null;
+  imageUrl: string | null;
+  eventId: string | null;
+  status: "draft" | "active" | "archived";
+  maxPerOrder: number;
+};
+
+/** Productos (RF03, RF14): `ItemVendible` de tipo `product` en el catálogo. */
+export const adminProducts = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { assertAdmin } = await import("./admin.server");
+    assertAdmin(context.roles);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const { items } = await gatewayFetch<{ items: AdminProduct[] }>("/catalog/admin/products", {
+      accessToken: context.accessToken,
+    });
+    return items;
+  });
+
+export const adminSaveProduct = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .validator((input: unknown) =>
+    z
+      .object({
+        id: z.string().uuid().nullable().optional(),
+        name: z.string().min(2).max(140),
+        description: z.string().max(4000).nullable().optional(),
+        sku: z
+          .string()
+          .regex(/^[A-Za-z0-9._-]{1,40}$/, "SKU: letras, números, punto, guion")
+          .nullable()
+          .optional(),
+        price: z.number().int().min(0),
+        fee: z.number().int().min(0),
+        imageId: z.string().uuid().nullable().optional(),
+        eventId: z.string().uuid().nullable().optional(),
+        status: z.enum(["draft", "active", "archived"]),
+        maxPerOrder: z.number().int().min(1).max(100),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertAdmin } = await import("./admin.server");
+    assertAdmin(context.roles);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const body = {
+      name: data.name,
+      description: data.description ?? null,
+      sku: data.sku ?? null,
+      price: data.price,
+      fee: data.fee,
+      imageId: data.imageId ?? null,
+      eventId: data.eventId ?? null,
+      status: data.status,
+      maxPerOrder: data.maxPerOrder,
+    };
+    const product = await gatewayFetch<AdminProduct>(
+      data.id ? `/catalog/admin/products/${data.id}` : "/catalog/admin/products",
+      { method: data.id ? "PUT" : "POST", body, accessToken: context.accessToken },
+    );
+    return { id: product.id };
+  });
+
+export const adminDeleteProduct = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { assertAdmin } = await import("./admin.server");
+    assertAdmin(context.roles);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch(`/catalog/admin/products/${data.id}`, {
+      method: "DELETE",
+      accessToken: context.accessToken,
+    });
     return { ok: true };
   });
 
@@ -580,9 +716,12 @@ export const adminStaff = createServerFn({ method: "GET" })
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
     const { gatewayFetch } = await import("./auth/gateway.server");
-    const page = await gatewayFetch<{ items: IdentityUser[] }>("/admin/users?role=admin&limit=100", {
-      accessToken: context.accessToken,
-    });
+    const page = await gatewayFetch<{ items: IdentityUser[] }>(
+      "/admin/users?role=admin&limit=100",
+      {
+        accessToken: context.accessToken,
+      },
+    );
     return page.items.map((user) => ({
       userId: user.id,
       role: "admin" as const,

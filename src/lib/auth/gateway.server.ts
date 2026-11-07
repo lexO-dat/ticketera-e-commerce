@@ -26,11 +26,14 @@ export class GatewayError extends Error {
 interface GatewayRequest {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
+  /** Multipart (subida de archivos); excluyente con `body`. */
+  form?: FormData;
   accessToken?: string | undefined;
 }
 
 export async function gatewayFetch<T>(path: string, request: GatewayRequest = {}): Promise<T> {
   const headers: Record<string, string> = { accept: "application/json" };
+  // Con `form`, fetch fija el content-type multipart con su boundary.
   if (request.body !== undefined) headers["content-type"] = "application/json";
   if (request.accessToken) headers["authorization"] = `Bearer ${request.accessToken}`;
   // El gateway limita por IP: hay que reenviar la del navegador, no la del servidor web.
@@ -45,7 +48,8 @@ export async function gatewayFetch<T>(path: string, request: GatewayRequest = {}
       method: request.method ?? "GET",
       headers,
       ...(request.body !== undefined ? { body: JSON.stringify(request.body) } : {}),
-      signal: AbortSignal.timeout(10_000),
+      ...(request.form ? { body: request.form } : {}),
+      signal: AbortSignal.timeout(request.form ? 30_000 : 10_000),
     });
   } catch {
     throw new GatewayError(

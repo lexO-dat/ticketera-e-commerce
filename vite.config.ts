@@ -29,6 +29,15 @@ export default defineConfig(({ command }) => ({
   server: {
     host: true,
     port: 8080,
+    // Desarrollo sin Nginx: /api/* (p. ej. imágenes del catálogo) va al gateway, igual que en
+    // https://localhost:8443.
+    proxy: {
+      "/api": {
+        target: process.env["GATEWAY_URL"] ?? "http://127.0.0.1:3000",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
+    },
   },
   resolve: {
     dedupe: [

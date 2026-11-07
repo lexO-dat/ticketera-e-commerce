@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/components/kit/Text";
 import { GhostButton, OutlineButton, PillButton } from "@/components/kit/PillButton";
 import { Field, Select, TextArea, TextInput } from "@/components/kit/Field";
+import { ImageUpload } from "@/components/kit/ImageUpload";
 import {
   adminDeleteDate,
   adminDeleteEvent,
@@ -27,7 +28,8 @@ type EventForm = {
   artist: string;
   category: (typeof CATEGORIES)[number];
   description: string;
-  imageUrl: string;
+  imageId: string | null;
+  imageUrl: string | null;
   status: "draft" | "published" | "soldout" | "archived";
   featured: boolean;
   urgencyNote: string;
@@ -40,7 +42,8 @@ const emptyEvent: EventForm = {
   artist: "",
   category: "conciertos",
   description: "",
-  imageUrl: "",
+  imageId: null,
+  imageUrl: null,
   status: "draft",
   featured: false,
   urgencyNote: "",
@@ -69,7 +72,7 @@ function AdminEvents() {
           artist: form.artist || null,
           category: form.category,
           description: form.description || null,
-          imageUrl: form.imageUrl || null,
+          imageId: form.imageId,
           status: form.status,
           featured: form.featured,
           urgencyNote: form.urgencyNote || null,
@@ -128,8 +131,13 @@ function AdminEvents() {
               <option value="archived">Archivado</option>
             </Select>
           </Field>
-          <Field label="Imagen (URL)">
-            <TextInput value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} />
+          <Field label="Imagen">
+            <ImageUpload
+              imageUrl={form.imageUrl}
+              onChange={(image) =>
+                setForm({ ...form, imageId: image?.id ?? null, imageUrl: image?.url ?? null })
+              }
+            />
           </Field>
           <Field label="Nota de urgencia" hint="Ej: Últimas entradas Platea Baja">
             <TextInput
@@ -193,7 +201,8 @@ function AdminEvents() {
                       artist: event.artist ?? "",
                       category: event.category,
                       description: event.description ?? "",
-                      imageUrl: event.image_url ?? "",
+                      imageId: event.image_id ?? null,
+                      imageUrl: event.image_url ?? null,
                       status: event.status,
                       featured: event.featured,
                       urgencyNote: event.urgency_note ?? "",

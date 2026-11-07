@@ -1,11 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-const EVENT_SELECT = `
-  id, slug, title, artist, category, description, image_url, status, featured, urgency_note, age_restriction,
-  event_dates ( id, starts_at, doors_at, on_sale, venue_id, venues ( id, name, city ),
-    ticket_types ( id, name, price, service_fee, capacity, sold, section_id ) )
-`;
+import type { ApiEventDate, ApiEventSummary, ApiSeatMap, ApiVenue } from "./catalog.server";
+
+/**
+ * Catálogo público: lo sirve el microservicio `catalog` a través del gateway (Fase 3), con caché
+ * de lectura en Redis. La disponibilidad real (vendidos / reservados) llega con `inventory`
+ * (Fase 4); mientras tanto `sold` es 0 y las reservas de butacas se leen del prototipo.
+ */
 
 export type CatalogEvent = {
   id: string;
@@ -27,65 +29,42 @@ export type CatalogEvent = {
   datesCount: number;
 };
 
-type RawEvent = {
-  id: string;
-  slug: string;
-  title: string;
-  artist: string | null;
-  category: string;
-  description: string | null;
-  image_url: string | null;
-  status: string;
-  featured: boolean;
-  urgency_note: string | null;
-  age_restriction: string | null;
-  event_dates: Array<{
-    id: string;
-    starts_at: string;
-    doors_at: string | null;
-    on_sale: boolean;
-    venue_id: string;
-    venues: { id: string; name: string; city: string } | null;
-    ticket_types: Array<{
-      id: string;
-      name: string;
-      price: number | string;
-      service_fee: number | string;
-      capacity: number;
-      sold: number;
-      section_id: string;
-    }>;
-  }>;
-};
-
-function shape(row: RawEvent): CatalogEvent {
-  const dates = [...row.event_dates].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  const first = dates[0];
-  const prices = dates.flatMap((d) => d.ticket_types.map((t) => Number(t.price)));
-  const capacity = dates.reduce(
-    (acc, d) => acc + d.ticket_types.reduce((s, t) => s + t.capacity, 0),
-    0,
-  );
-  const sold = dates.reduce((acc, d) => acc + d.ticket_types.reduce((s, t) => s + t.sold, 0), 0);
+function toCatalogEvent(event: ApiEventSummary): CatalogEvent {
   return {
-    id: row.id,
-    slug: row.slug,
-    title: row.title,
-    artist: row.artist,
-    category: row.category,
-    description: row.description,
-    imageUrl: row.image_url,
-    status: row.status,
-    featured: row.featured,
-    urgencyNote: row.urgency_note,
-    ageRestriction: row.age_restriction,
-    nextDate: first?.starts_at ?? null,
-    city: first?.venues?.city ?? null,
-    venueName: first?.venues?.name ?? null,
-    minPrice: prices.length ? Math.min(...prices) : null,
-    soldRatio: capacity > 0 ? sold / capacity : 0,
-    datesCount: dates.length,
+    id: event.id,
+    slug: event.slug,
+    title: event.title,
+    artist: event.artist,
+    category: event.category,
+    description: event.description,
+    imageUrl: event.imageUrl,
+    status: event.status,
+    featured: event.featured,
+    urgencyNote: event.urgencyNote,
+    ageRestriction: event.ageRestriction,
+    nextDate: event.nextDate,
+    city: event.city,
+    venueName: event.venueName,
+    minPrice: event.minPrice === null ? null : Number(event.minPrice),
+    soldRatio: 0,
+    datesCount: event.datesCount,
   };
+}
+
+function queryString(params: Record<string, string | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) if (value) search.set(key, value);
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}
+
+function isNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    [400, 404].includes(Number((error as { status: unknown }).status))
+  );
 }
 
 const listSchema = z.object({
@@ -98,199 +77,159 @@ const listSchema = z.object({
 export const listEvents = createServerFn({ method: "GET" })
   .validator((input: unknown) => listSchema.parse(input ?? {}))
   .handler(async ({ data }) => {
-    const { publicDb } = await import("./db.server");
-    const { data: rows, error } = await publicDb()
-      .from("events")
-      .select(EVENT_SELECT)
-      .in("status", ["published", "soldout"]);
-    if (error) throw new Error(error.message);
-
-    let events = ((rows ?? []) as unknown as RawEvent[]).map(shape);
-
-    if (data.category) events = events.filter((e) => e.category === data.category);
-    if (data.city) events = events.filter((e) => e.city === data.city);
-    if (data.q) {
-      const q = data.q.toLowerCase();
-      events = events.filter(
-        (e) =>
-          e.title.toLowerCase().includes(q) ||
-          (e.artist ?? "").toLowerCase().includes(q) ||
-          (e.venueName ?? "").toLowerCase().includes(q),
-      );
-    }
-
-    const sort = data.sort ?? "date";
-    events.sort((a, b) => {
-      if (sort === "popular") return b.soldRatio - a.soldRatio;
-      if (sort === "price") return (a.minPrice ?? 0) - (b.minPrice ?? 0);
-      return (a.nextDate ?? "").localeCompare(b.nextDate ?? "");
-    });
-
-    const cities = [...new Set(events.map((e) => e.city).filter(Boolean))] as string[];
-    return { events, cities };
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const result = await gatewayFetch<{ events: ApiEventSummary[]; cities: string[] }>(
+      `/catalog/events${queryString(data)}`,
+    );
+    return { events: result.events.map(toCatalogEvent), cities: result.cities };
   });
 
 export const getEvent = createServerFn({ method: "GET" })
-  .validator((input: unknown) => z.object({ slug: z.string() }).parse(input))
+  .validator((input: unknown) => z.object({ slug: z.string().max(80) }).parse(input))
   .handler(async ({ data }) => {
-    const { publicDb } = await import("./db.server");
-    const db = publicDb();
-    const { data: row, error } = await db
-      .from("events")
-      .select(EVENT_SELECT)
-      .eq("slug", data.slug)
-      .in("status", ["published", "soldout"])
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!row) return null;
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    let event: ApiEventSummary & { dates: ApiEventDate[] };
+    try {
+      event = await gatewayFetch(`/catalog/events/${encodeURIComponent(data.slug)}`);
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
 
-    const raw = row as unknown as RawEvent;
-    const { data: queue } = await db
-      .from("queue_config")
-      .select("enabled, concurrent_slots, window_minutes, waiting_message, simulated_queue_size")
-      .eq("event_id", raw.id)
-      .maybeSingle();
-
-    const { data: sections } = await db
-      .from("venue_sections")
-      .select("id, name, kind, capacity, sort_order, venue_id");
-
-    const dates = [...raw.event_dates]
-      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-      .map((d) => ({
-        id: d.id,
-        startsAt: d.starts_at,
-        doorsAt: d.doors_at,
-        onSale: d.on_sale,
-        venue: d.venues,
-        tickets: d.ticket_types
-          .map((t) => {
-            const section = (sections ?? []).find((s) => s.id === t.section_id);
-            return {
-              id: t.id,
-              name: t.name,
-              price: Number(t.price),
-              fee: Number(t.service_fee),
-              capacity: t.capacity,
-              sold: t.sold,
-              sectionId: t.section_id,
-              sectionKind: section?.kind ?? "seated",
-              sortOrder: section?.sort_order ?? 0,
-            };
-          })
-          .sort((a, b) => a.sortOrder - b.sortOrder),
-      }));
+    // La fila virtual sigue en el prototipo hasta la Fase 4 (queue).
+    const { legacy } = await import("./catalog.server");
+    const queue = await legacy(async () => {
+      const { publicDb } = await import("./db.server");
+      const { data: row } = await publicDb()
+        .from("queue_config")
+        .select("enabled, concurrent_slots, window_minutes, waiting_message, simulated_queue_size")
+        .eq("event_id", event.id)
+        .maybeSingle();
+      return row
+        ? {
+            enabled: row.enabled,
+            concurrentSlots: row.concurrent_slots,
+            windowMinutes: row.window_minutes,
+            waitingMessage: row.waiting_message,
+            simulatedQueueSize: row.simulated_queue_size,
+          }
+        : null;
+    }, null);
 
     return {
-      event: shape(raw),
-      dates,
-      queue: queue
-        ? {
-            enabled: queue.enabled,
-            concurrentSlots: queue.concurrent_slots,
-            windowMinutes: queue.window_minutes,
-            waitingMessage: queue.waiting_message,
-            simulatedQueueSize: queue.simulated_queue_size,
-          }
-        : null,
+      event: toCatalogEvent(event),
+      dates: event.dates.map((date) => ({
+        id: date.id,
+        startsAt: date.startsAt,
+        doorsAt: date.doorsAt,
+        onSale: date.onSale,
+        venue: date.venue,
+        tickets: date.ticketTypes.map((type) => ({
+          id: type.id,
+          name: type.name,
+          price: Number(type.price),
+          fee: Number(type.fee),
+          capacity: type.capacity,
+          sold: 0,
+          sectionId: type.sectionId,
+          sectionKind: type.sectionKind,
+          sortOrder: type.sortOrder,
+        })),
+      })),
+      queue,
     };
   });
 
 export const getSeatMap = createServerFn({ method: "GET" })
   .validator((input: unknown) => z.object({ eventDateId: z.string().uuid() }).parse(input))
   .handler(async ({ data }) => {
-    const { publicDb } = await import("./db.server");
-    const db = publicDb();
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    let map: ApiSeatMap;
+    try {
+      map = await gatewayFetch<ApiSeatMap>(`/catalog/dates/${data.eventDateId}/seat-map`);
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
 
-    const { data: date, error } = await db
-      .from("event_dates")
-      .select(
-        "id, starts_at, venue_id, on_sale, events ( id, slug, title, status ), venues ( id, name, city, map_width, map_height )",
-      )
-      .eq("id", data.eventDateId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!date) return null;
-
-    const [{ data: sections }, { data: tickets }, { data: holds }] = await Promise.all([
-      db
-        .from("venue_sections")
-        .select("id, name, kind, capacity, sort_order, shape_x, shape_y, shape_w, shape_h")
-        .eq("venue_id", date.venue_id)
-        .order("sort_order"),
-      db
-        .from("ticket_types")
-        .select("id, name, price, service_fee, capacity, sold, section_id")
-        .eq("event_date_id", data.eventDateId),
-      db
+    // Reservas de butacas: siguen en el prototipo hasta la Fase 4 (inventory).
+    const { legacy } = await import("./catalog.server");
+    const taken = await legacy(async () => {
+      const { publicDb } = await import("./db.server");
+      const { data: holds } = await publicDb()
         .from("seat_holds")
         .select("seat_id, expires_at, sold")
-        .eq("event_date_id", data.eventDateId),
-    ]);
-
-    const sectionIds = (sections ?? []).map((s) => s.id);
-    const { data: seats } = sectionIds.length
-      ? await db
-          .from("venue_seats")
-          .select("id, section_id, row_label, seat_number, x, y, blocked")
-          .in("section_id", sectionIds)
-      : { data: [] };
-
-    const now = Date.now();
-    const taken = new Set(
-      (holds ?? [])
-        .filter((h) => h.sold || new Date(h.expires_at).getTime() > now)
-        .map((h) => h.seat_id),
-    );
+        .eq("event_date_id", data.eventDateId);
+      const now = Date.now();
+      return new Set(
+        (holds ?? [])
+          .filter((hold) => hold.sold || new Date(hold.expires_at).getTime() > now)
+          .map((hold) => hold.seat_id),
+      );
+    }, new Set<string>());
 
     return {
       date: {
-        id: date.id,
-        startsAt: date.starts_at,
-        onSale: date.on_sale,
-        event: date.events,
-        venue: date.venues,
+        id: map.date.id,
+        startsAt: map.date.startsAt,
+        onSale: map.date.onSale,
+        event: map.date.event,
+        venue: {
+          id: map.date.venue.id,
+          name: map.date.venue.name,
+          city: map.date.venue.city,
+          map_width: map.date.venue.mapWidth,
+          map_height: map.date.venue.mapHeight,
+        },
       },
-      sections: (sections ?? []).map((s) => ({
-        id: s.id,
-        name: s.name,
-        kind: s.kind,
-        capacity: s.capacity,
-        sortOrder: s.sort_order,
-        x: s.shape_x,
-        y: s.shape_y,
-        w: s.shape_w,
-        h: s.shape_h,
+      sections: map.sections.map((section) => ({
+        id: section.id,
+        name: section.name,
+        kind: section.kind,
+        capacity: section.capacity,
+        sortOrder: section.sortOrder,
+        x: section.shape.x,
+        y: section.shape.y,
+        w: section.shape.w,
+        h: section.shape.h,
       })),
-      tickets: (tickets ?? []).map((t) => ({
-        id: t.id,
-        name: t.name,
-        price: Number(t.price),
-        fee: Number(t.service_fee),
-        capacity: t.capacity,
-        sold: t.sold,
-        sectionId: t.section_id,
+      tickets: map.ticketTypes.map((type) => ({
+        id: type.id,
+        name: type.name,
+        price: Number(type.price),
+        fee: Number(type.fee),
+        capacity: type.capacity,
+        sold: 0,
+        sectionId: type.sectionId,
       })),
-      seats: (seats ?? []).map((s) => ({
-        id: s.id,
-        sectionId: s.section_id,
-        row: s.row_label,
-        number: s.seat_number,
-        x: Number(s.x),
-        y: Number(s.y),
-        unavailable: s.blocked || taken.has(s.id),
+      seats: map.seats.map((seat) => ({
+        id: seat.id,
+        sectionId: seat.sectionId,
+        row: seat.row,
+        number: seat.number,
+        x: seat.x,
+        y: seat.y,
+        unavailable: seat.blocked || taken.has(seat.id),
       })),
     };
   });
 
 export const listVenues = createServerFn({ method: "GET" }).handler(async () => {
-  const { publicDb } = await import("./db.server");
-  const { data, error } = await publicDb()
-    .from("venues")
-    .select("id, name, city, address, capacity, venue_sections ( id, name, kind, capacity )")
-    .order("name");
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  const { gatewayFetch } = await import("./auth/gateway.server");
+  const { items } = await gatewayFetch<{ items: ApiVenue[] }>("/catalog/venues");
+  return items.map((venue) => ({
+    id: venue.id,
+    name: venue.name,
+    city: venue.city,
+    address: venue.address,
+    capacity: venue.capacity,
+    venue_sections: venue.sections.map((section) => ({
+      id: section.id,
+      name: section.name,
+      kind: section.kind,
+      capacity: section.capacity,
+    })),
+  }));
 });
 
 export const subscribeNewsletter = createServerFn({ method: "POST" })
@@ -317,6 +256,8 @@ export const trackMetric = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data }) => {
+    // Métricas: siguen en el prototipo; sin Supabase configurado se omiten.
+    if (!process.env["SUPABASE_URL"]) return { ok: false };
     const { adminDb } = await import("./db.server");
     const db = await adminDb();
     await db.from("event_metrics").insert({
