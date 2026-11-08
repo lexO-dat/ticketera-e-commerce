@@ -1,5 +1,5 @@
 import { createLogger } from "@shared/commons";
-import { createTokenVerifier, localKeySet } from "@shared/commons/auth";
+import { createAdmissionVerifier, createTokenVerifier, localKeySet } from "@shared/commons/auth";
 import type { Redis } from "@shared/commons/redis";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type CryptoKey, SignJWT, exportJWK, generateKeyPair } from "jose";
@@ -29,6 +29,7 @@ describe("gateway", () => {
   let upstream: FastifyInstance;
   let gateway: FastifyInstance;
   let privateKey: CryptoKey;
+  let queueKey: CryptoKey;
   const received: { url: string; headers: Record<string, unknown> }[] = [];
 
   async function token(roles: string[], key: CryptoKey = privateKey) {
@@ -46,6 +47,11 @@ describe("gateway", () => {
     const pair = await generateKeyPair("EdDSA", { crv: "Ed25519" });
     privateKey = pair.privateKey;
     const jwks = { keys: [{ ...(await exportJWK(pair.publicKey)), kid: "k1", alg: "EdDSA" }] };
+    const queuePair = await generateKeyPair("EdDSA", { crv: "Ed25519" });
+    queueKey = queuePair.privateKey;
+    const queueJwks = {
+      keys: [{ ...(await exportJWK(queuePair.publicKey)), kid: "q1", alg: "EdDSA" }],
+    };
 
     upstream = Fastify();
     upstream.all("/*", async (request) => {
@@ -60,9 +66,12 @@ describe("gateway", () => {
       logger,
       redis: fakeRedis(),
       verifyToken: createTokenVerifier({ getKey: localKeySet(jwks) }),
+      verifyAdmission: createAdmissionVerifier({ getKey: localKeySet(queueJwks) }),
       config: {
         IDENTITY_URLS: [`http://127.0.0.1:${port}`],
         CATALOG_URLS: [`http://127.0.0.1:${port}`],
+        QUEUE_URLS: [`http://127.0.0.1:${port}`],
+        INVENTORY_URLS: [`http://127.0.0.1:${port}`],
         CORS_ORIGINS: ["https://localhost:8443"],
         TRUST_PROXY: ["127.0.0.1"],
         UPSTREAM_TIMEOUT_MS: 2_000,
@@ -157,6 +166,55 @@ describe("gateway", () => {
     }
   });
 
+  it("pre-verifica el turno de la fila: firma válida y del mismo usuario", async () => {
+    const admission = (sub: string) =>
+      new SignJWT({ evt: "e0000000-0000-0000-0000-000000000001" })
+        .setProtectedHeader({ alg: "EdDSA", kid: "q1", typ: "admission+jwt" })
+        .setIssuer("ticketera-queue")
+        .setAudience("ticketera")
+        .setSubject(sub)
+        .setJti("j1")
+        .setIssuedAt()
+        .setExpirationTime("5m")
+        .sign(queueKey);
+    const authorization = `Bearer ${await token(["customer"])}`;
+    const before = received.length;
+    const foreign = await gateway.inject({
+      method: "POST",
+      url: "/inventory/reservations",
+      payload: {},
+      headers: { authorization, "x-admission-token": await admission("otro-usuario") },
+    });
+    expect(foreign.statusCode).toBe(403);
+    expect(foreign.json().reason).toBe("ADMISSION_REQUIRED");
+    const garbage = await gateway.inject({
+      method: "POST",
+      url: "/inventory/reservations",
+      payload: {},
+      headers: { authorization, "x-admission-token": "a.b.c" },
+    });
+    expect(garbage.statusCode).toBe(403);
+    expect(received.length).toBe(before);
+
+    const ok = await gateway.inject({
+      method: "POST",
+      url: "/inventory/reservations",
+      payload: {},
+      headers: {
+        authorization,
+        "x-admission-token": await admission("6f1c1a52-8a39-4f7c-9a55-3f2f0c1d2e3f"),
+      },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().upstreamUrl).toBe("/v1/reservations");
+    expect(received.at(-1)!.headers["x-admission-token"]).toBeDefined();
+    const queueAdmin = await gateway.inject({
+      url: "/queue/admin/events/x",
+      headers: { authorization },
+    });
+    expect(queueAdmin.statusCode).toBe(403);
+  });
+
   it("no permite escapar del prefijo con ../", async () => {
     const response = await gateway.inject({ url: "/auth/../admin/users" });
     expect([400, 401, 404]).toContain(response.statusCode);
@@ -214,6 +272,8 @@ describe("gateway", () => {
       config: {
         IDENTITY_URLS: ["http://127.0.0.1:1"],
         CATALOG_URLS: ["http://127.0.0.1:1"],
+        QUEUE_URLS: ["http://127.0.0.1:1"],
+        INVENTORY_URLS: ["http://127.0.0.1:1"],
         CORS_ORIGINS: [],
         TRUST_PROXY: [],
         UPSTREAM_TIMEOUT_MS: 1_000,

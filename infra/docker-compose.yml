@@ -227,6 +227,62 @@ services:
       identity:
         condition: service_healthy
 
+  queue:
+    build:
+      context: ..
+      dockerfile: services/queue/Dockerfile
+    init: true
+    # ADR-06: estado de la fila en Redis; el admisor corre en todas las réplicas con lock de líder.
+    deploy:
+      replicas: 2
+    environment:
+      SERVICE_NAME: queue
+      PORT: "3000"
+      LOG_LEVEL: info
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
+      JWKS_URL: http://identity:3000/.well-known/jwks.json
+      CATALOG_URL: http://catalog:3000
+      # Solo desarrollo: clave Ed25519 de los tokens de admisión (cámbiala fuera de desarrollo).
+      ADMISSION_SIGNING_KEY: ${QUEUE_ADMISSION_SIGNING_KEY:-LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1DNENBUUF3QlFZREsyVndCQ0lFSUcvc2IrYjhzLy8rQ2dKSkJYM200RFZ3WTgySjN5OFJzVm04dHEremo4VUIKLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo=}
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      catalog:
+        condition: service_healthy
+
+  inventory:
+    build:
+      context: ..
+      dockerfile: services/inventory/Dockerfile
+    init: true
+    deploy:
+      replicas: 2
+    environment:
+      SERVICE_NAME: inventory
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://inventory:${PG_PASSWORD_INVENTORY:-inventory-dev-password}@postgres-primary:5432/inventory
+      DB_POOL_MAX: "20"
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
+      JWKS_URL: http://identity:3000/.well-known/jwks.json
+      QUEUE_JWKS_URL: http://queue:3000/.well-known/jwks.json
+      CATALOG_URL: http://catalog:3000
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis-primary:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      catalog:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+
   gateway:
     build:
       context: ..
@@ -240,6 +296,8 @@ services:
       # El DNS de Docker reparte entre las réplicas de identity.
       IDENTITY_URLS: http://identity:3000
       CATALOG_URLS: http://catalog:3000
+      QUEUE_URLS: http://queue:3000
+      INVENTORY_URLS: http://inventory:3000
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost:8443}
     ports:
       # La web (BFF) en desarrollo llama al gateway directo; el navegador entra por Nginx.
@@ -250,6 +308,10 @@ services:
       identity:
         condition: service_healthy
       catalog:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+      inventory:
         condition: service_healthy
 
   # Plantilla de servicio: `docker compose --profile template up -d --build template`.

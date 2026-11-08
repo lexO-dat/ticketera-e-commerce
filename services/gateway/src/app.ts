@@ -1,7 +1,13 @@
 import cors from "@fastify/cors";
 import proxy from "@fastify/http-proxy";
 import { AppError, ErrorCode, type Logger, toProblem } from "@shared/commons";
-import { type TokenVerifier, bearerToken } from "@shared/commons/auth";
+import {
+  ADMISSION_HEADER,
+  type AdmissionVerifier,
+  type TokenVerifier,
+  admissionRequired,
+  bearerToken,
+} from "@shared/commons/auth";
 import { type ReadinessCheck, createServer } from "@shared/commons/http";
 import type { Redis } from "@shared/commons/redis";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -15,6 +21,8 @@ export interface AppDependencies {
     Config,
     | "IDENTITY_URLS"
     | "CATALOG_URLS"
+    | "QUEUE_URLS"
+    | "INVENTORY_URLS"
     | "CORS_ORIGINS"
     | "TRUST_PROXY"
     | "UPSTREAM_TIMEOUT_MS"
@@ -22,6 +30,8 @@ export interface AppDependencies {
   >;
   redis: Redis;
   verifyToken: TokenVerifier;
+  /** Token de admisión de la fila (ADR-06); sin él, el gateway no lo pre-verifica. */
+  verifyAdmission?: AdmissionVerifier;
   readinessChecks?: Record<string, ReadinessCheck>;
 }
 
@@ -89,6 +99,15 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     // Un token inválido se rechaza aquí, antes de consumir a los servicios.
     const token = bearerToken(request);
     if (token) request.user = await deps.verifyToken(token);
+    // Turno de la fila: firma, vigencia y que sea del mismo usuario. El servicio comprueba además
+    // el evento y que el jti siga vigente (permite expulsar).
+    const admission = request.headers[ADMISSION_HEADER];
+    if (typeof admission === "string" && admission && deps.verifyAdmission) {
+      const verified = await deps.verifyAdmission(admission);
+      if (verified.userId !== request.user?.id) {
+        throw admissionRequired("El turno de la fila no corresponde a tu sesión");
+      }
+    }
     await rateLimit(request, reply);
   });
 

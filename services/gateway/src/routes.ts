@@ -14,7 +14,7 @@ export interface UpstreamRoute {
 }
 
 export function upstreamRoutes(
-  config: Pick<Config, "IDENTITY_URLS" | "CATALOG_URLS">,
+  config: Pick<Config, "IDENTITY_URLS" | "CATALOG_URLS" | "QUEUE_URLS" | "INVENTORY_URLS">,
 ): UpstreamRoute[] {
   return [
     { prefix: "/auth", upstreams: config.IDENTITY_URLS, rewritePrefix: "/v1/auth" },
@@ -34,5 +34,20 @@ export function upstreamRoutes(
     },
     // Lectura pública (cacheada en catalog) e ItemVendible.
     { prefix: "/catalog", upstreams: config.CATALOG_URLS, rewritePrefix: "/v1" },
+    // Fila virtual (ADR-06) y reservas (ADR-03). Los servicios exigen sesión y, con fila, el turno.
+    {
+      prefix: "/queue/admin",
+      upstreams: config.QUEUE_URLS,
+      rewritePrefix: "/v1/admin",
+      roles: ["admin"],
+    },
+    { prefix: "/queue", upstreams: config.QUEUE_URLS, rewritePrefix: "/v1" },
+    {
+      prefix: "/inventory/admin",
+      upstreams: config.INVENTORY_URLS,
+      rewritePrefix: "/v1/admin",
+      roles: ["admin"],
+    },
+    { prefix: "/inventory", upstreams: config.INVENTORY_URLS, rewritePrefix: "/v1" },
   ];
 }

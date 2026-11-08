@@ -40,6 +40,21 @@ export function defaultRules(perMinute: number): RateLimitRule[] {
       matches: post("/auth/password/reset"),
     },
     { name: "refresh", limit: 60, windowSeconds: 60, by: "ip", matches: post("/auth/refresh") },
+    // Fila y reservas: un turno por usuario ya es idempotente; esto frena el abuso de bots.
+    {
+      name: "queue-join",
+      limit: 10,
+      windowSeconds: 60,
+      by: "user",
+      matches: (method, url) => method === "POST" && /^\/queue\/events\/[^/]+\/join$/.test(url),
+    },
+    {
+      name: "reserve",
+      limit: 30,
+      windowSeconds: 60,
+      by: "user",
+      matches: (method, url) => method === "POST" && url === "/inventory/reservations",
+    },
     { name: "global", limit: perMinute, windowSeconds: 60, by: "user", matches: () => true },
   ];
 }

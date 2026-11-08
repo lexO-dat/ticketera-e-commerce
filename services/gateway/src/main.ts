@@ -1,5 +1,5 @@
 import { createLogger } from "@shared/commons";
-import { createTokenVerifier } from "@shared/commons/auth";
+import { createAdmissionVerifier, createTokenVerifier } from "@shared/commons/auth";
 import { runService } from "@shared/commons/http";
 import { createRedis } from "@shared/commons/redis";
 import { buildApp } from "./app.js";
@@ -16,6 +16,9 @@ async function main(): Promise<void> {
     config,
     redis,
     verifyToken: createTokenVerifier({ getKey: replicatedJwks(config.IDENTITY_URLS) }),
+    verifyAdmission: createAdmissionVerifier({
+      jwksUrl: new URL("/.well-known/jwks.json", config.QUEUE_URLS[0]),
+    }),
     // El gateway sigue "listo" aunque un servicio caiga: responde 503 solo en sus rutas.
     readinessChecks: {
       redis: async () => {

@@ -17,6 +17,9 @@ const schema = baseServiceEnv.extend({
   IDENTITY_URLS: urlList,
   /** Réplicas de catalog. */
   CATALOG_URLS: urlList,
+  /** Réplicas de queue (fila virtual) e inventory (reservas). */
+  QUEUE_URLS: urlList,
+  INVENTORY_URLS: urlList,
   /** Orígenes de navegador permitidos (CORS) separados por coma; vacío = ninguno. */
   CORS_ORIGINS: z
     .string()
