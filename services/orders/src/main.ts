@@ -9,7 +9,7 @@ import { buildApp } from "./app.js";
 import { createCart } from "./cart.js";
 import { readConfig } from "./config.js";
 import { PAYMENT_SUBSCRIPTION, handlePaymentEvent } from "./payment-events.js";
-import { httpCatalog, httpInventory, httpPayments } from "./ports.js";
+import { httpCatalog, httpInventory, httpPayments, httpTickets } from "./ports.js";
 import { seedDemoData } from "./seed.js";
 import { createOrderService } from "./service.js";
 
@@ -48,6 +48,7 @@ async function main(): Promise<void> {
     inventory: httpInventory(client("inventory", config.INVENTORY_URL)),
     catalog: httpCatalog(client("catalog", config.CATALOG_URL)),
     payments: httpPayments(client("payments", config.PAYMENTS_URL)),
+    tickets: httpTickets(client("tickets", config.TICKETS_URL)),
   });
 
   await bus.subscribe({

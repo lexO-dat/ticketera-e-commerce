@@ -12,6 +12,7 @@ const schema = baseServiceEnv.extend({
   INVENTORY_URL: z.url(),
   CATALOG_URL: z.url(),
   PAYMENTS_URL: z.url(),
+  TICKETS_URL: z.url(),
   /** El carro vive en Redis (ADR-01); se borra tras este tiempo sin cambios. */
   CART_TTL_SECONDS: z.coerce.number().int().min(60).default(3600),
   /** Carga los códigos de descuento del prototipo si no hay ninguno. */

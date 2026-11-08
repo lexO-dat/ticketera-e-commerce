@@ -54,6 +54,11 @@ export interface PaymentsPort {
   refund(paymentId: string, reason: string, idempotencyKey: string): Promise<void>;
 }
 
+export interface TicketsPort {
+  /** Entradas de la orden ya validadas en puerta (no se pueden anular ni reembolsar). */
+  checkedInCount(orderId: string): Promise<number>;
+}
+
 export function httpInventory(client: ServiceClient): InventoryPort {
   return {
     async get(id) {
@@ -130,6 +135,18 @@ export function httpPayments(client: ServiceClient): PaymentsPort {
         body: { reason },
         idempotencyKey,
       });
+    },
+  };
+}
+
+export function httpTickets(client: ServiceClient): TicketsPort {
+  return {
+    async checkedInCount(orderId) {
+      const response = await client.request<{ items: { status: string }[] }>(
+        "GET",
+        `/internal/orders/${orderId}/tickets`,
+      );
+      return response.body.items.filter((ticket) => ticket.status === "CHECKED_IN").length;
     },
   };
 }

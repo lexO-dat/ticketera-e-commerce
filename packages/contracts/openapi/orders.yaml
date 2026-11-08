@@ -205,6 +205,9 @@ paths:
     post:
       operationId: adminRefundOrder
       summary: Reembolso total de una orden confirmada (el cupo vuelve a la venta)
+      description: >-
+        409 `NOT_REFUNDABLE` si la orden no está confirmada; 409 `TICKETS_ALREADY_USED` si alguna
+        entrada ya se validó en puerta (la butaca no puede volver a venderse).
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:

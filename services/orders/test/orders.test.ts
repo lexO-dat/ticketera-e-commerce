@@ -13,7 +13,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { type CartItem, createCart } from "../src/cart.js";
 import { handlePaymentEvent } from "../src/payment-events.js";
-import type { CatalogPort, InventoryPort, PaymentsPort, ReservationView } from "../src/ports.js";
+import type {
+  CatalogPort,
+  InventoryPort,
+  PaymentsPort,
+  ReservationView,
+  TicketsPort,
+} from "../src/ports.js";
 import { type OrderService, createOrderService } from "../src/service.js";
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL;
@@ -102,6 +108,9 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("orders (integración)", () => {
     },
   };
 
+  const checkedIn = new Map<string, number>();
+  const tickets: TicketsPort = { checkedInCount: async (orderId) => checkedIn.get(orderId) ?? 0 };
+
   const buyer = { name: "Ana Pérez", email: "ana@acceptme.com", phone: null, document: null };
 
   function reservation(userId: string, overrides: Partial<ReservationView> = {}): ReservationView {
@@ -175,7 +184,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("orders (integración)", () => {
       options: { keyPrefix: prefix },
     });
     const cart = createCart(redis, 600);
-    orders = createOrderService({ pool, cart, inventory, catalog, payments, logger });
+    orders = createOrderService({ pool, cart, inventory, catalog, payments, tickets, logger });
     const pair = await generateKeyPair("EdDSA", { crv: "Ed25519" });
     accessKey = pair.privateKey;
     const jwks = { keys: [{ ...(await exportJWK(pair.publicKey)), kid: "k1", alg: "EdDSA" }] };
@@ -379,6 +388,24 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("orders (integración)", () => {
     expect((await orders.getById(orderId))!.status).toBe("REFUNDED");
     expect(calls.returned).toContain(orderId);
     await expect(orders.adminRefund(orderId)).rejects.toMatchObject({ code: ErrorCode.CONFLICT });
+  });
+
+  it("no reembolsa una orden con entradas ya validadas en puerta (la butaca no vuelve a la venta)", async () => {
+    const user = newId();
+    await fillCart(user);
+    const { orderId } = await orders.checkout(user, { buyer, promoCode: null }, newId());
+    await handlePaymentEvent(
+      pool,
+      orders,
+      payment("PagoAutorizado", { paymentId: newId(), orderId, amount: "220000" }),
+    );
+    checkedIn.set(orderId, 1);
+    await expect(orders.adminRefund(orderId)).rejects.toMatchObject({
+      code: ErrorCode.CONFLICT,
+      reason: "TICKETS_ALREADY_USED",
+    });
+    expect((await orders.getById(orderId))!.status).toBe("CONFIRMED");
+    expect(calls.refunds.some((key) => key.endsWith(`refund-admin-${orderId}`))).toBe(false);
   });
 
   it("HTTP: carro y órdenes solo del dueño, /internal con secreto y Idempotency-Key obligatoria", async () => {

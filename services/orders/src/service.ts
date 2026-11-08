@@ -17,7 +17,13 @@ import {
   withTransaction,
 } from "@shared/commons/db";
 import type { Cart } from "./cart.js";
-import type { CatalogPort, InventoryPort, PaymentsPort, ReservationView } from "./ports.js";
+import type {
+  CatalogPort,
+  InventoryPort,
+  PaymentsPort,
+  ReservationView,
+  TicketsPort,
+} from "./ports.js";
 
 export type OrderStatus =
   "PENDING_PAYMENT" | "CONFIRMED" | "CANCELLED" | "REFUND_PENDING" | "REFUNDED";
@@ -146,9 +152,10 @@ export function createOrderService(options: {
   inventory: InventoryPort;
   catalog: CatalogPort;
   payments: PaymentsPort;
+  tickets: TicketsPort;
   logger: Logger;
 }) {
-  const { pool, cart, inventory, catalog, payments, logger } = options;
+  const { pool, cart, inventory, catalog, payments, tickets, logger } = options;
 
   async function load(db: Queryable, where: string, value: string, lock = false) {
     const result = await db.query<OrderRow>(
@@ -616,6 +623,14 @@ export function createOrderService(options: {
       if (!order) throw AppError.notFound("La orden no existe");
       if (order.status !== "CONFIRMED" || !order.paymentId) {
         throw AppError.conflict("NOT_REFUNDABLE", "Solo se reembolsan órdenes confirmadas");
+      }
+      // Una entrada ya usada no se anula: reembolsar devolvería la butaca a la venta y el nuevo
+      // comprador no podría recibir su entrada (el asiento sigue ocupado por la validada).
+      if ((await tickets.checkedInCount(orderId)) > 0) {
+        throw AppError.conflict(
+          "TICKETS_ALREADY_USED",
+          "La orden tiene entradas ya validadas en puerta; no se puede reembolsar",
+        );
       }
       await move(pool, orderId, ["CONFIRMED"], "REFUND_PENDING", { cancel_reason: "ADMIN_REFUND" });
       try {
