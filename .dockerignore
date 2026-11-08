@@ -7,14 +7,15 @@
 **/coverage
 .git
 .github
-.output
-.nitro
-.tanstack
-.vinxi
+**/.output
+**/.nitro
+**/.tanstack
+**/.vinxi
 .wrangler
 infra
 !infra/nginx
 docs
-public
-src
+# La web no va en las imágenes de servicios (solo su package.json, que npm ci necesita).
+apps/web/src
+apps/web/public
 *.md

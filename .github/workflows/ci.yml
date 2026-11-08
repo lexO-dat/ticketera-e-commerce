@@ -95,7 +95,7 @@ jobs:
       - run: uv run pytest -q
 
   web:
-    name: Web (typecheck, build)
+    name: Web (lint, typecheck, build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -105,8 +105,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: npx tsc --noEmit
-      - run: npm run build
+      - run: npm run lint
+      - run: npm run typecheck -w @apps/web
+      - run: npm run build -w @apps/web
       - name: App de validación (apps/scanner)
         run: npm run typecheck -w @apps/scanner && npm run build -w @apps/scanner
 

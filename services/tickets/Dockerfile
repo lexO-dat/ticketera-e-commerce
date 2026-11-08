@@ -20,7 +20,7 @@ FROM ${NODE_IMAGE} AS runtime
 ARG SERVICE
 ENV NODE_ENV=production PORT=3000
 # Mismo layout que el monorepo: algunas dependencias quedan anidadas en el workspace
-# (p. ej. zod 4 del backend convive con zod 3 de la web en la raíz).
+# (p. ej. zod 4 del backend convive con zod 3 de apps/web).
 COPY --from=prod-deps --chown=node:node /repo/node_modules /app/node_modules
 COPY --from=prod-deps --chown=node:node /repo/services/${SERVICE} /app/services/${SERVICE}
 COPY --from=build --chown=node:node /repo/services/${SERVICE}/dist /app/services/${SERVICE}/dist
