@@ -1,0 +1,169 @@
+openapi: 3.1.0
+info:
+  title: webpay-mock
+  version: 1.0.0
+  description: >
+    Adquirente simulado (único mock del sistema, ADR-07). Imita Webpay Plus REST v1.2 de Transbank
+    y su formulario de pago. Decide por el email del pagador (cabecera de extensión
+    `X-Mock-Payer-Email`): `@acceptme.com` aprueba, `@rejectme.com` rechaza y otro dominio rechaza
+    con `UNSUPPORTED_TEST_EMAIL` (configurable). Errores con el formato de Transbank
+    `{ error_message }`.
+servers:
+  - url: http://localhost:3005
+security: [{ tbkId: [], tbkSecret: [] }]
+paths:
+  /health/live:
+    $ref: "./common.yaml#/paths/~1health~1live"
+  /health/ready:
+    $ref: "./common.yaml#/paths/~1health~1ready"
+  /rswebpaytransaction/api/webpay/v1.2/transactions:
+    post:
+      operationId: createTransaction
+      parameters:
+        - { name: X-Mock-Payer-Email, in: header, schema: { type: string, format: email } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [buy_order, session_id, amount, return_url]
+              properties:
+                buy_order: { type: string, maxLength: 26 }
+                session_id: { type: string, maxLength: 61 }
+                amount: { type: integer, minimum: 1 }
+                return_url: { type: string, format: uri }
+      responses:
+        "200":
+          description: Redirigir al navegador a `url?token_ws=token`
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, url]
+                properties:
+                  token: { type: string }
+                  url: { type: string, format: uri }
+        "401": { $ref: "#/components/responses/TbkError" }
+        "422": { $ref: "#/components/responses/TbkError" }
+  /rswebpaytransaction/api/webpay/v1.2/transactions/{token}:
+    parameters: [{ $ref: "#/components/parameters/Token" }]
+    put:
+      operationId: commitTransaction
+      summary: Confirma (una sola vez; un commit repetido o antes de pagar responde 422)
+      responses:
+        "200": { $ref: "#/components/responses/Transaction" }
+        "422": { $ref: "#/components/responses/TbkError" }
+        "504": { $ref: "#/components/responses/TbkError" }
+    get:
+      operationId: transactionStatus
+      responses:
+        "200": { $ref: "#/components/responses/Transaction" }
+        "404": { $ref: "#/components/responses/TbkError" }
+  /rswebpaytransaction/api/webpay/v1.2/transactions/{token}/refunds:
+    post:
+      operationId: refundTransaction
+      parameters: [{ $ref: "#/components/parameters/Token" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Reversa (total, mismo día) o anulación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type: { type: string, enum: [REVERSED, NULLIFIED] }
+                  authorization_code: { type: string }
+                  nullified_amount: { type: integer }
+                  balance: { type: integer }
+                  response_code: { type: integer }
+        "422": { $ref: "#/components/responses/TbkError" }
+  /webpay/form:
+    get:
+      operationId: paymentForm
+      summary: Formulario de pago (HTML) con Pagar y Anular
+      security: []
+      parameters:
+        - { name: token_ws, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: HTML, content: { text/html: { schema: { type: string } } } }
+        "410": { description: Transacción inválida o ya procesada }
+  /webpay/form/pay:
+    post:
+      operationId: paymentFormPay
+      security: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token_ws: { type: string }
+      responses:
+        "303": { description: "A return_url?token_ws=…" }
+  /webpay/form/cancel:
+    post:
+      operationId: paymentFormCancel
+      security: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token_ws: { type: string }
+      responses:
+        "303": { description: "A return_url?TBK_TOKEN=…&TBK_ORDEN_COMPRA=…&TBK_ID_SESION=…" }
+components:
+  securitySchemes:
+    tbkId: { type: apiKey, in: header, name: Tbk-Api-Key-Id }
+    tbkSecret: { type: apiKey, in: header, name: Tbk-Api-Key-Secret }
+  parameters:
+    Token:
+      name: token
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[0-9a-f]{64}$" }
+  responses:
+    TbkError:
+      description: Error con el formato de Transbank
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error_message: { type: string }
+    Transaction:
+      description: Estado de la transacción
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              vci: { type: string }
+              amount: { type: integer }
+              status:
+                type: string
+                enum: [INITIALIZED, AUTHORIZED, FAILED, REVERSED, NULLIFIED, PARTIALLY_NULLIFIED]
+              buy_order: { type: string }
+              session_id: { type: string }
+              card_detail:
+                type: object
+                properties:
+                  card_number: { type: string, description: Últimos 4 dígitos }
+              authorization_code: { type: [string, "null"] }
+              payment_type_code: { type: string }
+              response_code: { type: [integer, "null"] }
+              installments_number: { type: integer }
+              balance: { type: integer }
+              mock_reason:
+                { type: string, description: "Extensión del mock (p. ej. UNSUPPORTED_TEST_EMAIL)" }
