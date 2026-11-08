@@ -12,7 +12,7 @@ Requisitos: Node 22.18+, Docker con Compose.
 
 ```bash
 npm install
-npm run infra:up      # infraestructura + identity, catalog, queue, inventory (2 réplicas c/u) + gateway
+npm run infra:up      # infraestructura + todos los servicios (2 réplicas c/u) + gateway
 cp .env.example .env  # la web habla con el gateway en GATEWAY_URL
 npm run dev           # web (TanStack Start) en http://localhost:8080 · vía Nginx: https://localhost:8443
 ```
@@ -21,14 +21,20 @@ Administrador de desarrollo: `admin@ticketera.local` / `admin-dev-password-123`.
 verificación y recuperación de contraseña quedan en la tabla `outbox` de la base `identity` hasta que
 exista `notifications` (Fase 7).
 
-| Servicio local                | Dirección                                   | Credenciales de desarrollo                                                                                      |
-| ----------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL primaria / réplica | `127.0.0.1:5432` / `:5433`                  | `postgres` / `postgres-dev-password`; una base y un rol por servicio (`<servicio>` / `<servicio>-dev-password`) |
-| Redis primario / réplica      | `127.0.0.1:6379` / `:6380`                  | contraseña `redis-dev-password`                                                                                 |
-| RabbitMQ (AMQP / consola)     | `127.0.0.1:5672` / http://localhost:15672   | `ticketera` / `rabbitmq-dev-password`                                                                           |
-| Mailpit (SMTP / bandeja)      | `127.0.0.1:1025` / http://localhost:8025    | —                                                                                                               |
-| Nginx (borde TLS 1.3)         | https://localhost:8443 (`/api/*` → gateway) | certificado autofirmado                                                                                         |
-| API Gateway                   | http://127.0.0.1:3000                       | —                                                                                                               |
+Para comprar: el pago se hace en el formulario del adquirente simulado (`webpay-mock`). El resultado
+depende del **email del comprador** en el checkout: `@acceptme.com` aprueba, `@rejectme.com` rechaza
+(otros dominios se rechazan con `UNSUPPORTED_TEST_EMAIL`). El flujo completo con redirección funciona
+por `https://localhost:8443`.
+
+| Servicio local                | Dirección                                        | Credenciales de desarrollo                                                                                      |
+| ----------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL primaria / réplica | `127.0.0.1:5432` / `:5433`                       | `postgres` / `postgres-dev-password`; una base y un rol por servicio (`<servicio>` / `<servicio>-dev-password`) |
+| Redis primario / réplica      | `127.0.0.1:6379` / `:6380`                       | contraseña `redis-dev-password`                                                                                 |
+| RabbitMQ (AMQP / consola)     | `127.0.0.1:5672` / http://localhost:15672        | `ticketera` / `rabbitmq-dev-password`                                                                           |
+| Mailpit (SMTP / bandeja)      | `127.0.0.1:1025` / http://localhost:8025         | —                                                                                                               |
+| Nginx (borde TLS 1.3)         | https://localhost:8443 (`/api/*` → gateway)      | certificado autofirmado                                                                                         |
+| API Gateway                   | http://127.0.0.1:3000                            | —                                                                                                               |
+| webpay-mock (formulario)      | http://127.0.0.1:3005 · `/webpay/form` vía Nginx | API: `597055555532` / `webpay-mock-dev-secret-0123456789`                                                       |
 
 Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 
@@ -45,7 +51,10 @@ Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 | `services/catalog`      | Eventos, recintos, butacas, productos (`ItemVendible`), imágenes y caché de lectura               |
 | `services/queue`        | Fila virtual: sala de espera en Redis, admisor con lock de líder, token de admisión               |
 | `services/inventory`    | Disponibilidad y reservas de 10 min con bloqueo pesimista (0 % sobreventa)                        |
-| `tools/queue-simulator` | Bots de carga de la fila y la reserva; verifica cupos y 0 sobreventas                             |
+| `services/orders`       | Carro (Redis), checkout idempotente, órdenes y promociones atómicas; orquesta la saga de compra   |
+| `services/payments`     | Intentos de pago, idempotencia, ledger de doble entrada, reembolsos y conciliación                |
+| `services/webpay-mock`  | Adquirente simulado (único mock): API y formulario de Webpay Plus                                 |
+| `tools/queue-simulator` | Bots que hacen fila, reservan y pagan; verifica cupos, órdenes, ledger y 0 sobreventas            |
 | `infra/`                | `docker-compose.yml`, Postgres (réplica síncrona), Nginx                                          |
 
 | Comando                                           | Qué hace                                                                                          |

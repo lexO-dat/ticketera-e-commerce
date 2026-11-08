@@ -51,14 +51,17 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 - [x] El gateway pre-verifica el token de admisión; inventory exige `jti` vigente
 - [x] `tools/queue-simulator` con verificación de 0 sobreventas (2.000 bots en local, ver su README)
 - [x] La web usa la fila y las reservas reales (turno en cookie HttpOnly)
-- [ ] `ReservaVendida` y conversión de reserva en venta: con orders (Fase 5)
+- [x] `ReservaVendida` y conversión de reserva en venta: con orders (Fase 5)
 - [ ] Prueba de 10.000 usuarios en infraestructura dedicada (Fase 8)
 
 ## Fase 5 — orders + payments + webpay-mock
 
-- [ ] Carrito, checkout, órdenes, promociones atómicas
-- [ ] Intentos de pago, idempotencia, ledger, outbox, reembolsos, conciliación
-- [ ] webpay-mock (`@acceptme.com` aprueba, `@rejectme.com` rechaza)
+- [x] Carrito en Redis, checkout idempotente, órdenes y promociones atómicas
+- [x] Intentos de pago, idempotencia, ledger append-only, outbox, reembolsos (admin y automático por pago tardío), conciliación
+- [x] webpay-mock (`@acceptme.com` aprueba, `@rejectme.com` rechaza), con formulario y modos de falla
+- [x] Autenticación entre servicios (`/internal/*` con secreto compartido; el gateway no los enruta)
+- [x] La web compra de verdad: carro del servidor, checkout → Webpay → orden; panel con reembolsos y promociones
+- [x] El simulador paga por Webpay y verifica órdenes, ledger y 0 sobreventas
 
 ## Fase 6 — tickets + scanner
 

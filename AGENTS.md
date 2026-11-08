@@ -180,11 +180,12 @@ docs/
   architecture/  adr/  services/
 ```
 
-Estado (Fases 1 a 4 completas): existen `packages/commons`, `packages/contracts`, `infra/`,
+Estado (Fases 1 a 5 completas): existen `packages/commons`, `packages/contracts`, `infra/`,
 `services/template`, `services/identity`, `services/gateway`, `services/catalog`,
-`services/queue`, `services/inventory` y `tools/queue-simulator`; la web se autentica con identity
-(BFF, ADR-08), lee y administra el catálogo y usa la fila virtual y las reservas reales vía
-gateway. Órdenes, pagos, promociones y métricas siguen en Supabase hasta sus fases. Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
+`services/queue`, `services/inventory`, `services/orders`, `services/payments`,
+`services/webpay-mock` y `tools/queue-simulator`; la web compra de punta a punta vía gateway
+(sesión BFF, catálogo, fila, reservas, carro, checkout y pago en Webpay simulado). Entradas con QR
+(Fase 6), correos (Fase 7) y las métricas del panel siguen pendientes; las métricas aún en Supabase. Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
 Comandos y servicios locales: [`README.md`](README.md).
 
 Mientras dure la migración, la app actual sigue en `src/`. Se migra con patrón **strangler**: cada
