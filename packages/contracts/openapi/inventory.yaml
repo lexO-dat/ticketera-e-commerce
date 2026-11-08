@@ -1,0 +1,194 @@
+openapi: 3.1.0
+info:
+  title: inventory-service
+  version: 1.0.0
+  description: >
+    Disponibilidad y reservas exclusivas de 10 minutos con bloqueo pesimista (ADR-03): 0 %
+    sobreventa, expiración perezosa y barrido periódico. En eventos con fila exige
+    `X-Admission-Token` vigente (ADR-06). Público vía gateway: `/inventory/*` → `/v1/*`.
+servers:
+  - url: http://localhost:3004
+security: []
+paths:
+  /health/live:
+    $ref: "./common.yaml#/paths/~1health~1live"
+  /health/ready:
+    $ref: "./common.yaml#/paths/~1health~1ready"
+  /v1/availability/events/{eventId}:
+    get:
+      operationId: eventAvailability
+      summary: Disponibilidad por tipo de entrada (micro-caché ~1 s)
+      parameters:
+        - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Disponibilidad
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [eventId, items]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        [ticketTypeId, eventDateId, capacity, sold, reserved, available, onSale]
+                      properties:
+                        ticketTypeId: { type: string, format: uuid }
+                        eventDateId: { type: string, format: uuid }
+                        capacity: { type: integer }
+                        sold: { type: integer }
+                        reserved: { type: integer }
+                        available: { type: integer }
+                        onSale: { type: boolean }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/availability/dates/{dateId}/seats:
+    get:
+      operationId: takenSeats
+      summary: Butacas vendidas o con reserva vigente
+      parameters:
+        - { name: dateId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Butacas ocupadas
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [eventDateId, unavailableSeatIds]
+                properties:
+                  eventDateId: { type: string, format: uuid }
+                  unavailableSeatIds: { type: array, items: { type: string, format: uuid } }
+  /v1/reservations:
+    get:
+      operationId: myReservations
+      summary: Reservas vigentes del usuario
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: eventDateId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Reservas
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Reservation" } }
+    post:
+      operationId: reserve
+      summary: Reserva exclusiva de 10 min (butacas o cantidad en sector general)
+      security: [{ bearer: [] }]
+      parameters:
+        - name: X-Admission-Token
+          in: header
+          required: false
+          description: Obligatorio si el evento tiene fila virtual
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ticketTypeId]
+              properties:
+                ticketTypeId: { type: string, format: uuid }
+                quantity: { type: integer, minimum: 1, maximum: 8, description: Sector general }
+                seatIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 8
+                  items: { type: string, format: uuid }
+                  description: Sector numerado
+      responses:
+        "201":
+          description: Reserva creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "403":
+          description: "ADMISSION_REQUIRED: sin turno válido en un evento con fila"
+          content:
+            application/problem+json:
+              schema: { $ref: "./common.yaml#/components/schemas/Problem" }
+        "409":
+          description: "SEAT_TAKEN, NOT_ENOUGH_AVAILABLE, LIMIT_PER_USER, NOT_ON_SALE, SOLD_OUT"
+          content:
+            application/problem+json:
+              schema: { $ref: "./common.yaml#/components/schemas/Problem" }
+  /v1/reservations/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getReservation
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Reserva (solo el dueño)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
+    delete:
+      operationId: releaseReservation
+      summary: Libera la reserva al instante (idempotente)
+      security: [{ bearer: [] }]
+      responses:
+        "204": { description: Liberada }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/admin/audit/events/{eventId}:
+    get:
+      operationId: auditEvent
+      summary: Verifica 0 sobreventa, butacas únicas y contadores consistentes (rol admin)
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Resultado de la auditoría
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [eventId, ok, ticketTypes]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  ok: { type: boolean }
+                  ticketTypes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ticketTypeId: { type: string, format: uuid }
+                        capacity: { type: integer }
+                        sold: { type: integer }
+                        reserved: { type: integer }
+                        oversold: { type: boolean }
+                        duplicateSeats: { type: integer }
+                        counterDrift: { type: integer }
+                        seatDrift: { type: integer }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT (EdDSA)
+  schemas:
+    Reservation:
+      type: object
+      required: [id, status, eventId, eventDateId, ticketTypeId, quantity, seatIds, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [ACTIVE, SOLD, RELEASED, EXPIRED] }
+        eventId: { type: string, format: uuid }
+        eventDateId: { type: string, format: uuid }
+        ticketTypeId: { type: string, format: uuid }
+        quantity: { type: integer }
+        seatIds: { type: array, items: { type: string, format: uuid } }
+        expiresAt: { type: string, format: date-time }

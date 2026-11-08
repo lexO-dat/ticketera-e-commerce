@@ -50,4 +50,11 @@ export function bindingFor(type: DomainEventType): string {
 }
 
 /** Servicios con contrato HTTP en `openapi/<servicio>.yaml`. */
-export const HttpServices = ["template", "identity", "gateway", "catalog"] as const;
+export const HttpServices = [
+  "template",
+  "identity",
+  "gateway",
+  "catalog",
+  "queue",
+  "inventory",
+] as const;
