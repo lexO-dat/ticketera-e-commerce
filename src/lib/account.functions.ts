@@ -1,13 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireAuth } from "@/lib/auth/middleware";
+import type { ApiOrder } from "@/lib/orders.functions";
 
 export type MyOrderTicket = { id: string; ticketCode: string; orderItemId: string };
 
 export type MyOrder = {
   id: string;
   orderCode: string;
-  status: string;
+  status: ApiOrder["status"];
   total: number;
   createdAt: string;
   items: {
@@ -26,54 +27,48 @@ export type MyOrder = {
   }[];
 };
 
-/**
- * Órdenes del usuario autenticado. Transitorio (strangler): los datos siguen en Supabase hasta la
- * Fase 5; sin RLS, la propiedad se filtra explícitamente por el usuario del token de identity.
- */
+export const ORDER_STATUS_LABELS: Record<ApiOrder["status"], string> = {
+  PENDING_PAYMENT: "Pendiente de pago",
+  CONFIRMED: "Pagada",
+  CANCELLED: "Cancelada",
+  REFUND_PENDING: "Reembolso en curso",
+  REFUNDED: "Reembolsada",
+};
+
+/** Órdenes del usuario autenticado, desde `orders` (la propiedad la valida el servicio). */
 export const myOrders = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }): Promise<MyOrder[]> => {
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { data, error } = await db
-      .from("orders")
-      .select(
-        `id, order_code, status, total, created_at,
-         order_items ( id, quantity, unit_price, unit_fee,
-           event_dates ( starts_at, events ( title, slug, image_url ), venues ( name, city ) ),
-           ticket_types ( name ),
-           venue_seats ( row_label, seat_number ) ),
-         tickets ( id, ticket_code, order_item_id )`,
-      )
-      .eq("user_id", context.userId)
-      .order("created_at", { ascending: false });
-
-    if (error) throw new Error(error.message);
-
-    return (data ?? []).map((order) => ({
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const { items } = await gatewayFetch<{ items: ApiOrder[] }>("/orders/orders", {
+      accessToken: context.accessToken,
+    });
+    return items.map((order) => ({
       id: order.id,
-      orderCode: order.order_code,
+      orderCode: order.orderCode,
       status: order.status,
       total: Number(order.total),
-      createdAt: order.created_at,
-      items: (order.order_items ?? []).map((item) => {
-        const date = item.event_dates;
-        const seat = item.venue_seats;
+      createdAt: order.createdAt,
+      items: order.lines.map((line) => {
+        const attributes = line.attributes;
+        const [eventTitle] = line.name.split(" — ");
         return {
-          id: item.id,
-          quantity: item.quantity,
-          unitPrice: Number(item.unit_price),
-          unitFee: Number(item.unit_fee),
-          eventTitle: date?.events?.title ?? "Evento",
-          eventSlug: date?.events?.slug ?? "",
-          imageUrl: date?.events?.image_url ?? null,
-          startsAt: date?.starts_at ?? order.created_at,
-          venue: [date?.venues?.name, date?.venues?.city].filter(Boolean).join(" · "),
-          ticketName: item.ticket_types?.name ?? "Ticket",
-          seatLabel: seat ? `Fila ${seat.row_label} · Butaca ${seat.seat_number}` : null,
-          tickets: (order.tickets ?? [])
-            .filter((t) => t.order_item_id === item.id)
-            .map((t) => ({ id: t.id, ticketCode: t.ticket_code, orderItemId: t.order_item_id })),
+          id: line.id,
+          quantity: line.quantity,
+          unitPrice: Number(line.unitPrice),
+          unitFee: Number(line.unitFee),
+          eventTitle: eventTitle ?? line.name,
+          eventSlug: "",
+          imageUrl: null,
+          startsAt:
+            typeof attributes["startsAt"] === "string" ? attributes["startsAt"] : order.createdAt,
+          venue: typeof attributes["venueName"] === "string" ? attributes["venueName"] : "",
+          ticketName:
+            typeof attributes["sectionName"] === "string" ? attributes["sectionName"] : line.name,
+          seatLabel:
+            line.seatIds.length > 0 ? `${line.seatIds.length} butaca(s) numerada(s)` : null,
+          // Las entradas (QR firmado) las emite `tickets` en la Fase 6.
+          tickets: [],
         };
       }),
     }));

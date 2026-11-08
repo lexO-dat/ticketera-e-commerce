@@ -160,55 +160,37 @@ function PurchasePage() {
       }
       setHoldUntil(new Date(result.expiresAt).getTime());
 
+      // Una línea del carro por reserva (respaldada por inventory durante 10 minutos).
       const eventInfo = data.date.event;
       const items: CartItem[] = [];
-
-      for (const seat of selected) {
-        const ticket = ticketBySection.get(seat.sectionId);
-        const section = data.sections.find((s) => s.id === seat.sectionId);
-        if (!ticket || !eventInfo) continue;
-        items.push({
-          key: `seat:${seat.id}`,
-          eventId: eventInfo.id,
-          eventSlug: eventInfo.slug,
-          eventTitle: eventInfo.title,
-          eventDateId: dateId,
-          startsAt: data.date.startsAt,
-          venueName: data.date.venue?.name ?? "",
-          ticketTypeId: ticket.id,
-          sectionName: section?.name ?? ticket.name,
-          seatId: seat.id,
-          seatLabel: `Fila ${seat.row} · Asiento ${seat.number}`,
-          quantity: 1,
-          unitPrice: ticket.price,
-          unitFee: ticket.fee,
-        });
-      }
-
-      for (const [ticketId, qty] of Object.entries(generalQty)) {
-        if (qty <= 0) continue;
-        const ticket = (data.tickets ?? []).find((t) => t.id === ticketId);
+      for (const reservation of result.reservations) {
+        const ticket = (data.tickets ?? []).find((t) => t.id === reservation.ticketTypeId);
         const section = data.sections.find((s) => s.id === ticket?.sectionId);
         if (!ticket || !eventInfo) continue;
+        const seats = reservation.seatIds
+          .map((id) => data.seats.find((seat) => seat.id === id))
+          .filter((seat) => seat !== undefined)
+          .map((seat) => `${seat.row}${seat.number}`);
         items.push({
-          key: `general:${ticket.id}`,
+          key: `res:${reservation.id}`,
+          kind: "ticket_type",
+          itemId: ticket.id,
+          reservationId: reservation.id,
           eventId: eventInfo.id,
           eventSlug: eventInfo.slug,
           eventTitle: eventInfo.title,
           eventDateId: dateId,
           startsAt: data.date.startsAt,
           venueName: data.date.venue?.name ?? "",
-          ticketTypeId: ticket.id,
           sectionName: section?.name ?? ticket.name,
-          seatId: null,
-          seatLabel: null,
-          quantity: qty,
+          seatLabel: seats.length > 0 ? `Butacas ${seats.join(", ")}`.slice(0, 80) : null,
+          quantity: reservation.quantity,
           unitPrice: ticket.price,
           unitFee: ticket.fee,
         });
       }
 
-      addToCart(items);
+      await addToCart(items, dateId);
       void navigate({ to: "/carro" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No pudimos reservar tus asientos");

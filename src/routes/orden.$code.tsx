@@ -1,45 +1,85 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { z } from "zod";
 
 import { PublicLayout } from "@/components/site/PublicLayout";
+import { RequireAuth } from "@/components/site/RequireAuth";
 import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/components/kit/Text";
-import { PillLink } from "@/components/kit/PillButton";
-import { getOrder } from "@/lib/checkout.functions";
+import { PillButton, PillLink } from "@/components/kit/PillButton";
+import { ORDER_STATUS_LABELS } from "@/lib/account.functions";
+import { getOrder, payOrder, type ApiOrder } from "@/lib/orders.functions";
 import { dateAndTime, money } from "@/lib/format";
 
+/** `?pago=` lo agrega payments al volver del adquirente; el estado real se lee de la orden. */
+const searchSchema = z.object({
+  pago: z.enum(["aprobado", "rechazado", "anulado", "expirado", "pendiente"]).optional(),
+});
+
 export const Route = createFileRoute("/orden/$code")({
+  validateSearch: (search) => searchSchema.parse(search),
   head: () => ({
     meta: [
-      { title: "Tu orden y tickets — Ticketera" },
-      { name: "description", content: "Detalle de tu compra, tickets y códigos de acceso." },
-      { property: "og:title", content: "Tu orden y tickets — Ticketera" },
-      { property: "og:description", content: "Detalle de tu compra y tickets digitales." },
+      { title: "Tu orden — Ticketera" },
+      { name: "description", content: "Estado de tu compra y detalle de la orden." },
       { name: "robots", content: "noindex" },
     ],
   }),
-  component: OrderPage,
+  component: OrderRoute,
 });
 
-type OrderItemRow = {
-  id: string;
-  quantity: number;
-  unit_price: number | string;
-  unit_fee: number | string;
-  event_dates: {
-    starts_at: string;
-    events: { title: string; slug: string } | null;
-    venues: { name: string; city: string } | null;
-  } | null;
-  ticket_types: { name: string } | null;
-  venue_seats: { row_label: string; seat_number: number } | null;
+function OrderRoute() {
+  const { code } = Route.useParams();
+  return (
+    <RequireAuth redirectTo={`/orden/${code}`}>
+      <OrderPage />
+    </RequireAuth>
+  );
+}
+
+const RETURN_MESSAGES: Record<string, string> = {
+  rechazado: "El pago fue rechazado. Tus entradas se liberaron; puedes intentarlo de nuevo.",
+  anulado: "Anulaste el pago en Webpay. Tus entradas se liberaron.",
+  expirado: "El tiempo para pagar terminó. Tus entradas se liberaron.",
 };
+
+function headline(order: ApiOrder): string {
+  switch (order.status) {
+    case "CONFIRMED":
+      return "¡Compra confirmada!";
+    case "PENDING_PAYMENT":
+      return "Confirmando tu pago…";
+    case "REFUND_PENDING":
+    case "REFUNDED":
+      return order.cancelReason === "LATE_PAYMENT"
+        ? "Tu pago llegó tarde y lo devolvimos"
+        : "Orden reembolsada";
+    default:
+      return "La compra no se completó";
+  }
+}
 
 function OrderPage() {
   const { code } = Route.useParams();
+  const { pago } = Route.useSearch();
+  const [error, setError] = useState<string | null>(null);
   const { data, isLoading, isError } = useQuery({
     queryKey: ["order", code],
     queryFn: () => getOrder({ data: { code } }),
+    // Mientras el pago se confirma (eventos asíncronos) se consulta cada 2 s.
+    refetchInterval: (query) => (query.state.data?.status === "PENDING_PAYMENT" ? 2000 : false),
   });
+
+  async function retryPayment() {
+    setError(null);
+    try {
+      const result = await payOrder({ data: { code } });
+      if (result.redirectUrl) window.location.assign(result.redirectUrl);
+      else setError("El pago ya está en curso; espera unos segundos.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No pudimos abrir el pago");
+    }
+  }
 
   if (isLoading) {
     return (
@@ -56,84 +96,83 @@ function OrderPage() {
       <PublicLayout>
         <div className="mx-auto max-w-[1240px] px-5 py-24 md:px-8">
           <SectionTitle>No encontramos esa orden</SectionTitle>
-          <MetaText className="mt-3">Revisa el código o búscalo de nuevo.</MetaText>
+          <MetaText className="mt-3">Revisa el código o búscala en Mi cuenta.</MetaText>
           <div className="mt-8">
-            <PillLink to="/orden">Buscar orden</PillLink>
+            <PillLink to="/mi-cuenta">Ir a Mi cuenta</PillLink>
           </div>
         </div>
       </PublicLayout>
     );
   }
 
-  const items = (data.order_items ?? []) as unknown as OrderItemRow[];
-  const tickets = (data.tickets ?? []) as { id: string; ticket_code: string; order_item_id: string }[];
+  const pendingWithoutAttempt = data.status === "PENDING_PAYMENT" && !pago;
 
   return (
     <PublicLayout>
       <div className="mx-auto max-w-[900px] px-5 py-12 md:px-8 md:py-16">
-        <Caption className="text-graphite">Compra confirmada</Caption>
-        <DisplayHeading className="mt-4">Orden {data.order_code}</DisplayHeading>
+        <Caption className="text-graphite">Orden {data.orderCode}</Caption>
+        <DisplayHeading className="mt-4">{headline(data)}</DisplayHeading>
         <MetaText className="mt-4">
-          Enviamos el detalle a {data.buyer_email}. Presenta el código de cada ticket en el acceso.
+          Estado: {ORDER_STATUS_LABELS[data.status]}
+          {data.status === "CONFIRMED"
+            ? ` · Enviaremos el detalle a ${data.buyer.email}. Tus entradas con código QR se emiten en breve.`
+            : ""}
         </MetaText>
+        {pago && RETURN_MESSAGES[pago] && data.status !== "CONFIRMED" ? (
+          <p role="status" className="mt-4 text-body text-ember">
+            {RETURN_MESSAGES[pago]}
+          </p>
+        ) : null}
+        {data.status === "PENDING_PAYMENT" ? (
+          <div className="mt-6 grid gap-3">
+            <MetaText>
+              {pendingWithoutAttempt
+                ? `Tus entradas están reservadas hasta las ${new Date(data.expiresAt).toLocaleTimeString("es-CL")}.`
+                : "Estamos esperando la confirmación del pago. Esta página se actualiza sola."}
+            </MetaText>
+            {pendingWithoutAttempt ? (
+              <div>
+                <PillButton onClick={() => void retryPayment()}>Pagar ahora</PillButton>
+              </div>
+            ) : null}
+            {error ? <MetaText className="text-ember">{error}</MetaText> : null}
+          </div>
+        ) : null}
 
         <Hairline className="mt-10" />
 
         <div className="grid">
-          {items.map((item) => {
-            const itemTickets = tickets.filter((t) => t.order_item_id === item.id);
-            const date = item.event_dates;
+          {data.lines.map((line) => {
+            const startsAt = line.attributes["startsAt"];
+            const venue = line.attributes["venueName"];
             return (
-              <div key={item.id} className="grid gap-4 border-b border-ash py-8">
-                <div className="grid gap-1">
-                  {date?.events ? (
-                    <Link
-                      to="/evento/$slug"
-                      params={{ slug: date.events.slug }}
-                      className="text-subheading hover:opacity-60"
-                    >
-                      {date.events.title}
-                    </Link>
-                  ) : null}
-                  <MetaText>
-                    {date ? dateAndTime(date.starts_at) : ""} · {date?.venues?.name}
-                  </MetaText>
-                  <MetaText>
-                    {item.ticket_types?.name}
-                    {item.venue_seats
-                      ? ` · Fila ${item.venue_seats.row_label}, Asiento ${item.venue_seats.seat_number}`
-                      : ""}
-                    {` · ${money(Number(item.unit_price) + Number(item.unit_fee))} c/u`}
-                  </MetaText>
-                </div>
-
-                <div className="grid gap-2">
-                  {itemTickets.map((ticket) => (
-                    <div
-                      key={ticket.id}
-                      className="flex flex-wrap items-center justify-between gap-4 rounded-card bg-plaster px-5 py-4"
-                    >
-                      <span className="font-roboto text-body tracking-[0.08em]">
-                        {ticket.ticket_code}
-                      </span>
-                      <MetaText className="inline">Ticket digital · válido para 1 acceso</MetaText>
-                    </div>
-                  ))}
-                </div>
+              <div key={line.id} className="grid gap-1 border-b border-ash py-6">
+                <span className="text-subheading">{line.name}</span>
+                <MetaText>
+                  {typeof startsAt === "string" ? `${dateAndTime(startsAt)} · ` : ""}
+                  {typeof venue === "string" ? venue : ""}
+                </MetaText>
+                <MetaText>
+                  {line.quantity} × {money(Number(line.unitPrice) + Number(line.unitFee))}
+                  {line.seatIds.length > 0 ? ` · ${line.seatIds.length} butaca(s) numerada(s)` : ""}
+                </MetaText>
               </div>
             );
           })}
         </div>
 
         <div className="mt-10 grid gap-3">
-          <Row label="Tickets" value={money(Number(data.subtotal))} />
+          <Row label="Tickets y productos" value={money(Number(data.subtotal))} />
           <Row label="Cargos por servicio" value={money(Number(data.fees))} />
           {Number(data.discount) > 0 ? (
-            <Row label={`Descuento ${data.promo_code ?? ""}`} value={`- ${money(Number(data.discount))}`} />
+            <Row
+              label={`Descuento ${data.promoCode ?? ""}`}
+              value={`- ${money(Number(data.discount))}`}
+            />
           ) : null}
           <Hairline />
           <div className="flex items-baseline justify-between">
-            <span className="text-body">Total pagado</span>
+            <span className="text-body">Total</span>
             <span className="text-subheading">{money(Number(data.total))}</span>
           </div>
         </div>

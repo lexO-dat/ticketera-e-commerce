@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { PublicLayout } from "@/components/site/PublicLayout";
 import { DisplayHeading, Hairline, MetaText, SectionTitle } from "@/components/kit/Text";
 import { GhostButton, PillLink } from "@/components/kit/PillButton";
-import { removeFromCart, setQuantity, useCart } from "@/lib/cart";
+import { removeFromCart, useCart } from "@/lib/cart";
 import { dateAndTime, money } from "@/lib/format";
 
 export const Route = createFileRoute("/carro")({
@@ -64,34 +64,17 @@ function CartPage() {
                   </div>
 
                   <div className="flex items-center gap-4">
-                    {item.seatId ? (
-                      <MetaText className="inline">1 ticket</MetaText>
-                    ) : (
-                      <>
-                        <GhostButton
-                          arrow={false}
-                          aria-label="Restar"
-                          onClick={() => setQuantity(item.key, item.quantity - 1)}
-                        >
-                          −
-                        </GhostButton>
-                        <span className="w-6 text-center text-body">{item.quantity}</span>
-                        <GhostButton
-                          arrow={false}
-                          aria-label="Sumar"
-                          onClick={() => setQuantity(item.key, item.quantity + 1)}
-                        >
-                          +
-                        </GhostButton>
-                      </>
-                    )}
+                    {/* La cantidad la fija la reserva; para cambiarla se vuelve a elegir. */}
+                    <MetaText className="inline">
+                      {item.quantity} {item.quantity === 1 ? "ticket" : "tickets"}
+                    </MetaText>
                   </div>
 
                   <div className="grid justify-items-end gap-2">
                     <span className="text-body">
                       {money((item.unitPrice + item.unitFee) * item.quantity)}
                     </span>
-                    <GhostButton arrow={false} onClick={() => removeFromCart(item.key)}>
+                    <GhostButton arrow={false} onClick={() => void removeFromCart(item.key)}>
                       <span className="text-graphite underline">Quitar</span>
                     </GhostButton>
                   </div>

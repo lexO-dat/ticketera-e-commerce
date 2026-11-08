@@ -1,40 +1,76 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { addCartItems, getCart, removeCartItem, type ServerCartItem } from "@/lib/orders.functions";
+
+/**
+ * Carro del comprador. Vive en el servidor (orders, Redis replicado — ADR-01): recargar la página o
+ * cambiar de réplica no lo pierde. Cada línea de entradas está respaldada por una reserva real de
+ * inventory; los precios que muestra son informativos (el checkout los recalcula).
+ */
 export type CartItem = {
   key: string;
+  kind: string;
+  itemId: string;
+  reservationId: string | null;
   eventId: string;
   eventSlug: string;
   eventTitle: string;
   eventDateId: string;
   startsAt: string;
   venueName: string;
-  ticketTypeId: string;
   sectionName: string;
-  seatId: string | null;
   seatLabel: string | null;
   quantity: number;
   unitPrice: number;
   unitFee: number;
 };
 
-const KEY = "ticketera.cart";
 const EVENT = "ticketera:cart";
 
-function read(): CartItem[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as CartItem[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+function fromServer(item: ServerCartItem): CartItem {
+  return {
+    key: item.key,
+    kind: item.kind,
+    itemId: item.itemId,
+    reservationId: item.reservationId ?? null,
+    eventId: item.eventId ?? "",
+    eventSlug: item.display?.eventSlug ?? "",
+    eventTitle: item.display?.title ?? "",
+    eventDateId: item.eventDateId ?? "",
+    startsAt: item.display?.startsAt ?? "",
+    venueName: item.display?.venueName ?? "",
+    sectionName: item.display?.subtitle ?? "",
+    seatLabel: item.display?.seatLabel ?? null,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    unitFee: item.unitFee,
+  };
 }
 
-function write(items: CartItem[]) {
-  window.localStorage.setItem(KEY, JSON.stringify(items));
-  window.dispatchEvent(new Event(EVENT));
+function toServer(item: CartItem): ServerCartItem {
+  return {
+    key: item.key,
+    kind: item.kind,
+    itemId: item.itemId,
+    quantity: item.quantity,
+    ...(item.reservationId ? { reservationId: item.reservationId } : {}),
+    ...(item.eventId ? { eventId: item.eventId } : {}),
+    ...(item.eventDateId ? { eventDateId: item.eventDateId } : {}),
+    display: {
+      title: item.eventTitle,
+      subtitle: item.sectionName,
+      ...(item.eventSlug ? { eventSlug: item.eventSlug } : {}),
+      ...(item.startsAt ? { startsAt: item.startsAt } : {}),
+      ...(item.venueName ? { venueName: item.venueName } : {}),
+      ...(item.seatLabel ? { seatLabel: item.seatLabel } : {}),
+    },
+    unitPrice: item.unitPrice,
+    unitFee: item.unitFee,
+  };
+}
+
+function notify() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(EVENT));
 }
 
 export function cartTotals(items: CartItem[]) {
@@ -44,50 +80,41 @@ export function cartTotals(items: CartItem[]) {
   return { subtotal, fees, count, total: subtotal + fees };
 }
 
-export function addToCart(newItems: CartItem[]) {
-  const current = read();
-  const merged = [...current];
-  for (const item of newItems) {
-    const existing = merged.findIndex((i) => i.key === item.key);
-    if (existing >= 0) {
-      const prev = merged[existing]!;
-      merged[existing] = { ...prev, quantity: item.seatId ? 1 : prev.quantity + item.quantity };
-    } else {
-      merged.push(item);
-    }
-  }
-  write(merged);
+/** Agrega líneas; con `replaceEventDateId` reemplaza las de esa función (nueva selección). */
+export async function addToCart(items: CartItem[], replaceEventDateId?: string) {
+  await addCartItems({
+    data: { items: items.map(toServer), ...(replaceEventDateId ? { replaceEventDateId } : {}) },
+  });
+  notify();
 }
 
-export function removeFromCart(key: string) {
-  write(read().filter((i) => i.key !== key));
+/** Quita la línea y libera su reserva. */
+export async function removeFromCart(key: string) {
+  await removeCartItem({ data: { key } });
+  notify();
 }
 
-export function setQuantity(key: string, quantity: number) {
-  write(
-    read().map((i) => (i.key === key ? { ...i, quantity: Math.max(1, Math.min(8, quantity)) } : i)),
-  );
-}
-
+/** El checkout ya vació el carro en el servidor; solo se refresca la vista. */
 export function clearCart() {
-  write([]);
+  notify();
 }
 
 export function useCart() {
   const [items, setItems] = useState<CartItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    const sync = () => setItems(read());
-    sync();
-    window.addEventListener(EVENT, sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener(EVENT, sync);
-      window.removeEventListener("storage", sync);
-    };
+  const refresh = useCallback(() => {
+    getCart()
+      .then((server) => setItems(server.map(fromServer)))
+      .catch(() => setItems([]))
+      .finally(() => setLoaded(true));
   }, []);
 
-  const refresh = useCallback(() => setItems(read()), []);
+  useEffect(() => {
+    refresh();
+    window.addEventListener(EVENT, refresh);
+    return () => window.removeEventListener(EVENT, refresh);
+  }, [refresh]);
 
-  return { items, totals: cartTotals(items), refresh };
+  return { items, totals: cartTotals(items), refresh, loaded };
 }

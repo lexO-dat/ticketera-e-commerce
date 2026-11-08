@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireAuth } from "@/lib/auth/middleware";
 import type { ApiEvent, ApiVenue } from "@/lib/catalog.server";
+import type { ApiOrder } from "@/lib/orders.functions";
 
 export const adminOverview = createServerFn({ method: "GET" })
   .middleware([requireAuth])
@@ -16,37 +17,37 @@ export const adminOverview = createServerFn({ method: "GET" })
     const { items: events } = await gatewayFetch<{ items: ApiEvent[] }>("/catalog/admin/events", {
       accessToken: context.accessToken,
     });
-    const empty = {
-      orders: [] as {
-        id: string;
-        order_code: string;
-        buyer_name: string;
-        buyer_email: string;
-        total: number | string;
-        status: string;
-        created_at: string;
-      }[],
-      metrics: [] as {
+    const ordersResult = await gatewayFetch<{ items: ApiOrder[] }>("/orders/admin/orders", {
+      accessToken: context.accessToken,
+    }).catch(() => ({ items: [] as ApiOrder[] }));
+    const orders = ordersResult.items.map((o) => ({
+      id: o.id,
+      order_code: o.orderCode,
+      buyer_name: o.buyer.name,
+      buyer_email: o.buyer.email,
+      total: Number(o.total),
+      status: o.status === "CONFIRMED" ? "paid" : o.status.toLowerCase(),
+      created_at: o.createdAt,
+    }));
+    // Métricas del embudo: siguen en el prototipo hasta la Fase 8.
+    const metrics = await legacy(
+      async () => {
+        const { adminDb } = await import("./db.server");
+        const db = await adminDb();
+        const { data } = await db
+          .from("event_metrics")
+          .select("event_id, kind, quantity, amount, created_at")
+          .limit(5000);
+        return data ?? [];
+      },
+      [] as {
         event_id: string;
         kind: string;
         quantity: number;
         amount: number | string;
         created_at: string;
       }[],
-    };
-    const { orders, metrics } = await legacy(async () => {
-      const { adminDb } = await import("./db.server");
-      const db = await adminDb();
-      const [{ data: orders }, { data: metrics }] = await Promise.all([
-        db
-          .from("orders")
-          .select("id, order_code, buyer_name, buyer_email, total, status, created_at")
-          .order("created_at", { ascending: false })
-          .limit(300),
-        db.from("event_metrics").select("event_id, kind, quantity, amount, created_at").limit(5000),
-      ]);
-      return { orders: orders ?? [], metrics: metrics ?? [] };
-    }, empty);
+    );
 
     const paid = orders.filter((o) => o.status === "paid");
     const revenue = paid.reduce((s, o) => s + Number(o.total), 0);
@@ -619,61 +620,63 @@ export const adminDeleteProduct = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Órdenes (orders). */
 export const adminOrders = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { data, error } = await db
-      .from("orders")
-      .select(
-        `id, order_code, buyer_name, buyer_email, buyer_phone, total, subtotal, fees, discount, promo_code, status, created_at,
-         order_items ( id, quantity, unit_price, unit_fee,
-           event_dates ( starts_at, events ( title ), venues ( name, city ) ),
-           ticket_types ( name ) ),
-         tickets ( id, ticket_code, checked_in_at )`,
-      )
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    return data ?? [];
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const { items } = await gatewayFetch<{ items: ApiOrder[] }>("/orders/admin/orders", {
+      accessToken: context.accessToken,
+    });
+    return items;
   });
 
-export const adminUpdateOrderStatus = createServerFn({ method: "POST" })
+/** Reembolso total de una orden confirmada (payments + inventory devuelve el cupo). */
+export const adminRefundOrder = createServerFn({ method: "POST" })
   .middleware([requireAuth])
-  .validator((input: unknown) =>
-    z
-      .object({
-        id: z.string().uuid(),
-        status: z.enum(["pending", "paid", "refunded", "cancelled"]),
-      })
-      .parse(input),
-  )
+  .validator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { error } = await db.from("orders").update({ status: data.status }).eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    return gatewayFetch<ApiOrder>(`/orders/admin/orders/${data.id}/refund`, {
+      method: "POST",
+      accessToken: context.accessToken,
+    });
   });
+
+type ApiPromo = {
+  id: string;
+  code: string;
+  percentOff: number;
+  maxUses: number;
+  usedCount: number;
+  validUntil: string | null;
+  active: boolean;
+  createdAt: string;
+};
 
 export const adminPromos = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { data, error } = await db
-      .from("promo_codes")
-      .select("id, code, percent_off, max_uses, used_count, valid_until, active, created_at")
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    return data ?? [];
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const { items } = await gatewayFetch<{ items: ApiPromo[] }>("/orders/admin/promos", {
+      accessToken: context.accessToken,
+    });
+    return items.map((promo) => ({
+      id: promo.id,
+      code: promo.code,
+      percent_off: promo.percentOff,
+      max_uses: promo.maxUses,
+      used_count: promo.usedCount,
+      valid_until: promo.validUntil,
+      active: promo.active,
+      created_at: promo.createdAt,
+    }));
   });
 
 export const adminSavePromo = createServerFn({ method: "POST" })
@@ -693,22 +696,19 @@ export const adminSavePromo = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const payload = {
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const body = {
       code: data.code.toUpperCase(),
-      percent_off: data.percentOff,
-      max_uses: data.maxUses,
-      valid_until: data.validUntil ? new Date(data.validUntil).toISOString() : null,
+      percentOff: data.percentOff,
+      maxUses: data.maxUses,
+      validUntil: data.validUntil ? new Date(data.validUntil).toISOString() : null,
       active: data.active,
     };
-    if (data.id) {
-      const { error } = await db.from("promo_codes").update(payload).eq("id", data.id);
-      if (error) throw new Error(error.message);
-      return { ok: true };
-    }
-    const { error } = await db.from("promo_codes").insert(payload);
-    if (error) throw new Error(error.message);
+    await gatewayFetch(data.id ? `/orders/admin/promos/${data.id}` : "/orders/admin/promos", {
+      method: data.id ? "PUT" : "POST",
+      body,
+      accessToken: context.accessToken,
+    });
     return { ok: true };
   });
 
@@ -718,10 +718,11 @@ export const adminDeletePromo = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { error } = await db.from("promo_codes").delete().eq("id", data.id);
-    if (error) throw new Error(error.message);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch(`/orders/admin/promos/${data.id}`, {
+      method: "DELETE",
+      accessToken: context.accessToken,
+    });
     return { ok: true };
   });
 

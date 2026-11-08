@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { PublicLayout } from "@/components/site/PublicLayout";
 import { RequireAuth } from "@/components/site/RequireAuth";
@@ -7,8 +7,7 @@ import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/com
 import { GhostButton, PillButton, PillLink } from "@/components/kit/PillButton";
 import { Field, TextInput } from "@/components/kit/Field";
 import { clearCart, useCart } from "@/lib/cart";
-import { createOrder, validatePromo } from "@/lib/checkout.functions";
-import { getSessionToken } from "@/lib/session";
+import { checkout, validatePromo } from "@/lib/orders.functions";
 import { dateAndTime, money } from "@/lib/format";
 
 export const Route = createFileRoute("/checkout")({
@@ -17,7 +16,7 @@ export const Route = createFileRoute("/checkout")({
       { title: "Pago de tickets — Ticketera" },
       { name: "description", content: "Completa tus datos y paga tus tickets de forma segura." },
       { property: "og:title", content: "Pago de tickets — Ticketera" },
-      { property: "og:description", content: "Checkout de tickets con pago simulado." },
+      { property: "og:description", content: "Checkout de tickets con pago en Webpay." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -34,19 +33,17 @@ function CheckoutRoute() {
 
 
 function CheckoutPage() {
-  const { items, totals } = useCart();
+  const { items, totals, loaded } = useCart();
   const navigate = useNavigate();
-  const [token, setToken] = useState<string | null>(null);
+  // Una clave por visita: un doble clic o un reintento no crea dos órdenes ni dos cobros.
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [form, setForm] = useState({ name: "", email: "", phone: "", document: "" });
   const [promo, setPromo] = useState("");
   const [promoState, setPromoState] = useState<
     { ok: true; code: string; percentOff: number } | { ok: false; reason: string } | null
   >(null);
-  const [card, setCard] = useState({ number: "4111 1111 1111 1111", expiry: "12/29", cvv: "123" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => setToken(getSessionToken()), []);
 
   const discount = promoState?.ok ? Math.round((totals.subtotal * promoState.percentOff) / 100) : 0;
   const grandTotal = totals.total - discount;
@@ -62,37 +59,46 @@ function CheckoutPage() {
   }
 
   async function pay() {
-    if (!token || items.length === 0) return;
+    if (items.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await createOrder({
+      const result = await checkout({
         data: {
-          buyerName: form.name,
-          buyerEmail: form.email,
-          buyerPhone: form.phone || undefined,
-          buyerDocument: form.document || undefined,
+          idempotencyKey,
+          buyer: {
+            name: form.name,
+            email: form.email,
+            phone: form.phone || null,
+            document: form.document || null,
+          },
           promoCode: promoState?.ok ? promoState.code : null,
-          sessionToken: token,
-          items: items.map((item) => ({
-            eventId: item.eventId,
-            eventDateId: item.eventDateId,
-            ticketTypeId: item.ticketTypeId,
-            seatId: item.seatId,
-            quantity: item.quantity,
-          })),
         },
       });
       clearCart();
+      // El formulario de tarjeta vive en el adquirente (Webpay): aquí nunca se piden datos de tarjeta.
+      if (result.redirectUrl) {
+        window.location.assign(result.redirectUrl);
+        return;
+      }
       void navigate({ to: "/orden/$code", params: { code: result.orderCode } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No pudimos procesar el pago");
-    } finally {
       setBusy(false);
     }
   }
 
   const valid = form.name.trim().length > 2 && /.+@.+\..+/.test(form.email);
+
+  if (!loaded) {
+    return (
+      <PublicLayout>
+        <div className="mx-auto max-w-[1240px] px-5 py-24 md:px-8">
+          <MetaText>Cargando tu carro…</MetaText>
+        </div>
+      </PublicLayout>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -152,31 +158,13 @@ function CheckoutPage() {
               </div>
             </section>
 
-            <section className="grid gap-6">
+            <section className="grid gap-4">
               <SectionTitle>Medio de pago</SectionTitle>
               <MetaText>
-                Entorno de demostración: el pago es simulado y no se cobra ningún monto.
+                Al pagar te llevamos al formulario de Webpay; nunca ingresas tu tarjeta en este
+                sitio. Entorno de demostración: el adquirente es simulado y decide por el email del
+                comprador (@acceptme.com aprueba, @rejectme.com rechaza).
               </MetaText>
-              <div className="grid gap-6 sm:grid-cols-3">
-                <Field label="Número de tarjeta">
-                  <TextInput
-                    value={card.number}
-                    onChange={(e) => setCard({ ...card, number: e.target.value })}
-                  />
-                </Field>
-                <Field label="Vencimiento">
-                  <TextInput
-                    value={card.expiry}
-                    onChange={(e) => setCard({ ...card, expiry: e.target.value })}
-                  />
-                </Field>
-                <Field label="CVV">
-                  <TextInput
-                    value={card.cvv}
-                    onChange={(e) => setCard({ ...card, cvv: e.target.value })}
-                  />
-                </Field>
-              </div>
             </section>
 
             <section className="grid gap-4">

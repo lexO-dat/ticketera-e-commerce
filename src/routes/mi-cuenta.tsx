@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { PublicLayout } from "@/components/site/PublicLayout";
 import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/components/kit/Text";
 import { GhostButton, PillLink } from "@/components/kit/PillButton";
-import { myOrders, type MyOrder } from "@/lib/account.functions";
+import { ORDER_STATUS_LABELS, myOrders, type MyOrder } from "@/lib/account.functions";
 import { refreshAuth, useAuth } from "@/lib/useAuth";
 import { signOut } from "@/lib/auth.functions";
 import { dateAndTime, money } from "@/lib/format";
@@ -117,7 +117,7 @@ function OrderGroup({ title, orders, empty }: { title: string; orders: MyOrder[]
               <div className="flex flex-wrap items-baseline justify-between gap-3">
                 <span className="text-subheading">Orden {order.orderCode}</span>
                 <MetaText className="inline">
-                  {money(order.total)} · {order.status === "paid" ? "Pagada" : order.status}
+                  {money(order.total)} · {ORDER_STATUS_LABELS[order.status]}
                 </MetaText>
               </div>
 

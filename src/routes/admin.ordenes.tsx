@@ -5,44 +5,48 @@ import { useState } from "react";
 import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/components/kit/Text";
 import { GhostButton } from "@/components/kit/PillButton";
 import { Field, Select, TextInput } from "@/components/kit/Field";
-import { adminOrders, adminUpdateOrderStatus } from "@/lib/admin.functions";
-import { dateAndTime, money, shortDate } from "@/lib/format";
+import { ORDER_STATUS_LABELS } from "@/lib/account.functions";
+import { adminOrders, adminRefundOrder } from "@/lib/admin.functions";
+import type { ApiOrder } from "@/lib/orders.functions";
+import { money, shortDate } from "@/lib/format";
 
 export const Route = createFileRoute("/admin/ordenes")({
   component: AdminOrdersPage,
 });
 
-const STATUS = ["pending", "paid", "refunded", "cancelled"] as const;
-const STATUS_LABEL: Record<string, string> = {
-  pending: "Pendiente",
-  paid: "Pagada",
-  refunded: "Reembolsada",
-  cancelled: "Anulada",
-};
+const STATUSES = Object.keys(ORDER_STATUS_LABELS) as ApiOrder["status"][];
 
+/**
+ * Órdenes (orders). El estado lo mueve la saga de compra, nunca a mano: lo único que un admin
+ * puede hacer es reembolsar una orden confirmada (payments devuelve el dinero e inventory el cupo).
+ */
 function AdminOrdersPage() {
   const qc = useQueryClient();
   const orders = useQuery({ queryKey: ["admin", "orders"], queryFn: () => adminOrders() });
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
-  const update = useMutation({
-    mutationFn: (input: { id: string; status: (typeof STATUS)[number] }) =>
-      adminUpdateOrderStatus({ data: input }),
+  const refund = useMutation({
+    mutationFn: (id: string) => adminRefundOrder({ data: { id } }),
     onSuccess: () => {
+      setMessage(
+        "Reembolso solicitado: la orden pasa a Reembolsada cuando el adquirente confirme.",
+      );
       void qc.invalidateQueries({ queryKey: ["admin"] });
     },
+    onError: (e: Error) => setMessage(e.message),
   });
 
-  const list = (orders.data ?? []).filter((order) => {
+  const term = query.trim().toLowerCase();
+  const visible = (orders.data ?? []).filter((order) => {
     const matchesStatus = !status || order.status === status;
-    const term = query.trim().toLowerCase();
     const matchesTerm =
       !term ||
-      order.order_code.toLowerCase().includes(term) ||
-      order.buyer_email.toLowerCase().includes(term) ||
-      order.buyer_name.toLowerCase().includes(term);
+      order.orderCode.toLowerCase().includes(term) ||
+      order.buyer.email.toLowerCase().includes(term) ||
+      order.buyer.name.toLowerCase().includes(term);
     return matchesStatus && matchesTerm;
   });
 
@@ -53,100 +57,91 @@ function AdminOrdersPage() {
         <DisplayHeading className="mt-3">Órdenes</DisplayHeading>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-[2fr_1fr]">
         <Field label="Buscar">
           <TextInput
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Código, nombre o email"
+            placeholder="Código, email o nombre"
           />
         </Field>
         <Field label="Estado">
           <Select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Todos</option>
-            {STATUS.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABEL[s]}
+            {STATUSES.map((value) => (
+              <option key={value} value={value}>
+                {ORDER_STATUS_LABELS[value]}
               </option>
             ))}
           </Select>
         </Field>
       </div>
+      {message ? <MetaText>{message}</MetaText> : null}
 
-      <Hairline />
-      <MetaText>{list.length} órdenes</MetaText>
-
-      <div className="grid gap-4">
+      <section className="grid gap-4">
+        <SectionTitle>{visible.length} órdenes</SectionTitle>
+        <Hairline />
         {orders.isLoading ? <MetaText>Cargando…</MetaText> : null}
-        {list.map((order) => (
+        {visible.map((order) => (
           <div key={order.id} className="grid gap-3 border-b border-ash pb-5">
-            <div className="grid gap-3 md:grid-cols-[auto_1fr_auto_auto_auto] md:items-center md:gap-6">
-              <span className="font-roboto text-body tracking-[0.06em]">{order.order_code}</span>
-              <MetaText>
-                {order.buyer_name} · {order.buyer_email}
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="font-roboto text-body tracking-[0.06em]">{order.orderCode}</span>
+              <MetaText className="inline">
+                {order.buyer.name} · {order.buyer.email}
               </MetaText>
-              <MetaText className="inline">{shortDate(order.created_at)}</MetaText>
+              <MetaText className="inline">{shortDate(order.createdAt)}</MetaText>
               <span className="text-body">{money(Number(order.total))}</span>
-              <Select
-                className="max-w-[170px]"
-                value={order.status}
-                onChange={(e) =>
-                  update.mutate({ id: order.id, status: e.target.value as (typeof STATUS)[number] })
-                }
-              >
-                {STATUS.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </Select>
+              <MetaText className="inline">
+                {ORDER_STATUS_LABELS[order.status]}
+                {order.cancelReason ? ` (${order.cancelReason})` : ""}
+              </MetaText>
+              {order.status === "CONFIRMED" ? (
+                <GhostButton
+                  arrow={false}
+                  disabled={refund.isPending}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `¿Reembolsar ${money(Number(order.total))} de la orden ${order.orderCode}?`,
+                      )
+                    )
+                      refund.mutate(order.id);
+                  }}
+                >
+                  <span className="text-ember underline">Reembolsar</span>
+                </GhostButton>
+              ) : null}
             </div>
-
-            <GhostButton arrow={false} onClick={() => setOpenId(openId === order.id ? null : order.id)}>
-              <span className="text-graphite underline">
-                {openId === order.id ? "Ocultar detalle" : "Ver detalle y tickets"}
+            <GhostButton
+              arrow={false}
+              onClick={() => setOpenId(openId === order.id ? null : order.id)}
+            >
+              <span className="underline">
+                {openId === order.id ? "Ocultar detalle" : "Ver detalle"}
               </span>
             </GhostButton>
-
             {openId === order.id ? (
-              <div className="grid gap-5 rounded-card bg-plaster p-6">
-                <SectionTitle>Detalle</SectionTitle>
-                <div className="grid gap-2">
-                  {(order.order_items ?? []).map((item) => (
-                    <MetaText key={item.id}>
-                      {item.event_dates?.events?.title} · {dateAndTime(item.event_dates?.starts_at ?? "")}{" "}
-                      · {item.ticket_types?.name} × {item.quantity} ·{" "}
-                      {money(Number(item.unit_price) + Number(item.unit_fee))} c/u
-                    </MetaText>
-                  ))}
-                </div>
-                <div className="grid gap-2">
-                  <MetaText>Tickets emitidos</MetaText>
-                  <div className="flex flex-wrap gap-3">
-                    {(order.tickets ?? []).map((ticket) => (
-                      <span
-                        key={ticket.id}
-                        className="rounded-pill bg-paper px-4 py-1 font-roboto text-micro tracking-[0.08em]"
-                      >
-                        {ticket.ticket_code}
-                        {ticket.checked_in_at ? " · usado" : ""}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="grid gap-1">
-                  <MetaText>Subtotal {money(Number(order.subtotal))}</MetaText>
-                  <MetaText>Cargos {money(Number(order.fees))}</MetaText>
-                  <MetaText>
-                    Descuento {money(Number(order.discount))}
-                    {order.promo_code ? ` (${order.promo_code})` : ""}
+              <div className="grid gap-2 rounded-card bg-plaster p-5">
+                {order.lines.map((line) => (
+                  <MetaText key={line.id}>
+                    {line.name} × {line.quantity} ·{" "}
+                    {money(Number(line.unitPrice) + Number(line.unitFee))} c/u
+                    {line.seatIds.length > 0 ? ` · ${line.seatIds.length} butaca(s)` : ""}
                   </MetaText>
-                </div>
+                ))}
+                <Hairline />
+                <MetaText>Subtotal {money(Number(order.subtotal))}</MetaText>
+                <MetaText>Cargos {money(Number(order.fees))}</MetaText>
+                <MetaText>
+                  Descuento {money(Number(order.discount))}
+                  {order.promoCode ? ` (${order.promoCode})` : ""}
+                </MetaText>
+                <MetaText>Pago {order.paymentId ?? "—"}</MetaText>
               </div>
             ) : null}
           </div>
         ))}
-      </div>
+      </section>
     </div>
   );
 }

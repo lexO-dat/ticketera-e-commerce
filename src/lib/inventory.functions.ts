@@ -34,7 +34,11 @@ const reserveSchema = z.object({
 });
 
 export type ReserveResult =
-  | { ok: true; reservationIds: string[]; expiresAt: string }
+  | {
+      ok: true;
+      reservations: { id: string; ticketTypeId: string; quantity: number; seatIds: string[] }[];
+      expiresAt: string;
+    }
   | {
       ok: false;
       reason: "SEAT_TAKEN" | "NOT_AVAILABLE" | "ADMISSION_REQUIRED" | "LIMIT" | "OTHER";
@@ -106,7 +110,16 @@ export const reserveTickets = createServerFn({ method: "POST" })
       };
     }
     const expiresAt = created.map((item) => item.expiresAt).sort()[0] ?? new Date().toISOString();
-    return { ok: true, reservationIds: created.map((item) => item.id), expiresAt };
+    return {
+      ok: true,
+      reservations: created.map((item) => ({
+        id: item.id,
+        ticketTypeId: item.ticketTypeId,
+        quantity: item.quantity,
+        seatIds: item.seatIds,
+      })),
+      expiresAt,
+    };
   });
 
 export const releaseTickets = createServerFn({ method: "POST" })
