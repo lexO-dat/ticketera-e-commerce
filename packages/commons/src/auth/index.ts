@@ -157,3 +157,5 @@ export function assertOwnerOrRole(user: AuthUser, ownerId: string, ...roles: Rol
   if (roles.some((role) => user.roles.includes(role))) return;
   throw AppError.forbidden("No tienes acceso a este recurso");
 }
+
+export * from "./admission.js";
