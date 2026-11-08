@@ -209,7 +209,16 @@ export function createOrderService(options: {
         type: "OrdenCancelada",
         source: SOURCE,
         aggregateId: order.id,
-        data: { orderId: order.id, userId: order.user_id, reason },
+        data: {
+          orderId: order.id,
+          userId: order.user_id,
+          reason,
+          // Para avisar al comprador (notifications).
+          orderCode: order.order_code,
+          buyerName: order.buyer_name,
+          buyerEmail: order.buyer_email,
+          total: order.total.toString(),
+        },
       }),
     );
   }
