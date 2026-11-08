@@ -239,38 +239,21 @@ export const listVenues = createServerFn({ method: "GET" }).handler(async () => 
 });
 
 export const subscribeNewsletter = createServerFn({ method: "POST" })
-  .validator((input: unknown) => z.object({ email: z.string().email() }).parse(input))
+  .validator((input: unknown) => z.object({ email: z.string().email().max(254) }).parse(input))
   .handler(async ({ data }) => {
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { error } = await db
-      .from("newsletter_subscribers")
-      .upsert({ email: data.email.toLowerCase() }, { onConflict: "email" });
-    if (error) throw new Error(error.message);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch("/catalog/newsletter", { method: "POST", body: { email: data.email } });
     return { ok: true };
   });
 
-export const trackMetric = createServerFn({ method: "POST" })
-  .validator((input: unknown) =>
-    z
-      .object({
-        eventId: z.string().uuid(),
-        kind: z.enum(["view", "add_to_cart", "checkout", "purchase"]),
-        quantity: z.number().int().min(1).max(20).default(1),
-        amount: z.number().min(0).default(0),
-      })
-      .parse(input),
-  )
+/**
+ * Vista de la página de un evento (embudo de ventas en catalog). Reservas, checkouts y compras
+ * los cuenta catalog desde los eventos de dominio: el navegador no informa montos.
+ */
+export const trackView = createServerFn({ method: "POST" })
+  .validator((input: unknown) => z.object({ eventId: z.string().uuid() }).parse(input))
   .handler(async ({ data }) => {
-    // Métricas: siguen en el prototipo; sin Supabase configurado se omiten.
-    if (!process.env["SUPABASE_URL"]) return { ok: false };
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    await db.from("event_metrics").insert({
-      event_id: data.eventId,
-      kind: data.kind,
-      quantity: data.quantity,
-      amount: data.amount,
-    });
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch(`/catalog/events/${data.eventId}/views`, { method: "POST" });
     return { ok: true };
   });

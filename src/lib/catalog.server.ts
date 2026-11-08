@@ -105,21 +105,3 @@ export type ApiSeatMap = {
     blocked: boolean;
   }[];
 };
-
-/**
- * Lecturas de dominios que todavía viven en Supabase (fila virtual, reservas, órdenes, métricas)
- * hasta sus fases. Si Supabase no está configurado o falla, la página sigue funcionando con el
- * valor por defecto en vez de romperse.
- */
-export async function legacy<T>(read: () => Promise<T>, fallback: T): Promise<T> {
-  if (!process.env["SUPABASE_URL"]) return fallback;
-  try {
-    return await read();
-  } catch (error) {
-    console.error(
-      "[legacy] lectura de Supabase falló:",
-      error instanceof Error ? error.message : error,
-    );
-    return fallback;
-  }
-}

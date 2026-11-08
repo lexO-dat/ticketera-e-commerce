@@ -1,4 +1,4 @@
--- Códigos de descuento del prototipo (supabase/migrations). Solo con SEED_DEMO_DATA=true y si no hay
+-- Códigos de descuento del prototipo (seed de Supabase, ya eliminado). Solo con SEED_DEMO_DATA=true y si no hay
 -- ninguno (ver src/seed.ts).
 insert into promo_codes (id, code, percent_off, max_uses, used_count, valid_until, active) values
  ('c0000000-0000-0000-0000-000000000001', 'PRIMERAFILA', 10, 500, 42, now() + interval '60 days', true),

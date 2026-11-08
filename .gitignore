@@ -27,10 +27,6 @@ dist-ssr
 .wrangler/
 .dev.vars
 
-# Supabase
-supabase/.temp
-supabase/.branches
-
 # Coverage
 coverage
 .nyc_output

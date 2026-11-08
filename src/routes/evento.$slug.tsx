@@ -14,7 +14,7 @@ import {
 } from "@/components/kit/Text";
 import { PillLink } from "@/components/kit/PillButton";
 import { HeroMedia } from "@/components/site/HeroMedia";
-import { getEvent, trackMetric } from "@/lib/catalog.functions";
+import { getEvent, trackView } from "@/lib/catalog.functions";
 import { CATEGORY_LABELS, clock, longDate, money } from "@/lib/format";
 
 const eventQuery = (slug: string) =>
@@ -87,9 +87,7 @@ function EventDetail() {
   const { event, dates, queue } = data;
 
   useEffect(() => {
-    void trackMetric({ data: { eventId: event.id, kind: "view", quantity: 1, amount: 0 } }).catch(
-      () => undefined,
-    );
+    void trackView({ data: { eventId: event.id } }).catch(() => undefined);
   }, [event.id]);
 
   return (

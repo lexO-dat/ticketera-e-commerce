@@ -5,15 +5,20 @@ import { requireAuth } from "@/lib/auth/middleware";
 import type { ApiEvent, ApiVenue } from "@/lib/catalog.server";
 import type { ApiOrder } from "@/lib/orders.functions";
 
+/** `GET /catalog/admin/metrics` (contrato en packages/contracts/openapi/catalog.yaml). */
+interface MetricsSummary {
+  funnel: Record<"view" | "add_to_cart" | "checkout" | "purchase", number>;
+  events: { eventId: string; views: number; revenue: string }[];
+}
+
 export const adminOverview = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
     const { gatewayFetch } = await import("./auth/gateway.server");
-    const { legacy } = await import("./catalog.server");
 
-    // Catálogo: microservicio catalog. Órdenes, métricas y fila: prototipo hasta sus fases.
+    // Catálogo, órdenes, métricas, ocupación y fila: cada dato desde su microservicio.
     const { items: events } = await gatewayFetch<{ items: ApiEvent[] }>("/catalog/admin/events", {
       accessToken: context.accessToken,
     });
@@ -29,25 +34,10 @@ export const adminOverview = createServerFn({ method: "GET" })
       status: o.status === "CONFIRMED" ? "paid" : o.status.toLowerCase(),
       created_at: o.createdAt,
     }));
-    // Métricas del embudo: siguen en el prototipo hasta la Fase 8.
-    const metrics = await legacy(
-      async () => {
-        const { adminDb } = await import("./db.server");
-        const db = await adminDb();
-        const { data } = await db
-          .from("event_metrics")
-          .select("event_id, kind, quantity, amount, created_at")
-          .limit(5000);
-        return data ?? [];
-      },
-      [] as {
-        event_id: string;
-        kind: string;
-        quantity: number;
-        amount: number | string;
-        created_at: string;
-      }[],
-    );
+    // Embudo de ventas: catalog (vistas de la web + eventos de inventory y orders).
+    const metrics = await gatewayFetch<MetricsSummary>("/catalog/admin/metrics?days=30", {
+      accessToken: context.accessToken,
+    }).catch(() => undefined);
 
     const paid = orders.filter((o) => o.status === "paid");
     const revenue = paid.reduce((s, o) => s + Number(o.total), 0);
@@ -86,15 +76,18 @@ export const adminOverview = createServerFn({ method: "GET" })
       days.set(key, entry);
     }
 
-    const funnel = { view: 0, add_to_cart: 0, checkout: 0, purchase: 0 } as Record<string, number>;
-    const perEvent = new Map<string, { views: number; revenue: number }>();
-    for (const m of metrics) {
-      funnel[m.kind] = (funnel[m.kind] ?? 0) + m.quantity;
-      const entry = perEvent.get(m.event_id) ?? { views: 0, revenue: 0 };
-      if (m.kind === "view") entry.views += m.quantity;
-      entry.revenue += Number(m.amount);
-      perEvent.set(m.event_id, entry);
-    }
+    const funnel: Record<string, number> = metrics?.funnel ?? {
+      view: 0,
+      add_to_cart: 0,
+      checkout: 0,
+      purchase: 0,
+    };
+    const perEvent = new Map(
+      (metrics?.events ?? []).map((m) => [
+        m.eventId,
+        { views: m.views, revenue: Number(m.revenue) },
+      ]),
+    );
 
     const topEvents = events
       .map((e) => ({

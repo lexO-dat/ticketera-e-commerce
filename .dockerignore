@@ -17,5 +17,4 @@ infra
 docs
 public
 src
-supabase
 *.md
