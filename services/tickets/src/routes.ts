@@ -1,6 +1,6 @@
 import { AppError } from "@shared/commons";
 import type { AuthGuards } from "@shared/commons/auth";
-import { parseInput } from "@shared/commons/http";
+import { internalGuard, parseInput } from "@shared/commons/http";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { TicketQr } from "./qr.js";
@@ -35,7 +35,7 @@ function userOf(request: FastifyRequest) {
 
 export function registerRoutes(
   app: FastifyInstance,
-  deps: { tickets: TicketService; qr: TicketQr; guards: AuthGuards },
+  deps: { tickets: TicketService; qr: TicketQr; guards: AuthGuards; internalToken: string },
 ): void {
   const { tickets, qr, guards } = deps;
   const user = { preHandler: guards.required() };
@@ -68,6 +68,16 @@ export function registerRoutes(
   });
 
   // ---------- Validación en puerta (RF15) ----------
+
+  // Interno (notifications): entradas de una orden con su QR para el correo.
+  app.get(
+    "/internal/orders/:id/tickets",
+    { preHandler: internalGuard(deps.internalToken) },
+    async (request) => {
+      const { id } = parseInput(schemas.id, request.params);
+      return { items: await tickets.listByOrder(id) };
+    },
+  );
 
   app.post("/v1/checkin", door, async (request) => {
     const body = parseInput(schemas.checkin, request.body);

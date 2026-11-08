@@ -11,6 +11,7 @@ export interface AppDependencies {
   tickets: TicketService;
   qr: TicketQr;
   verifyToken: TokenVerifier;
+  internalToken: string;
   readinessChecks?: Record<string, ReadinessCheck>;
 }
 
@@ -21,6 +22,11 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     trustProxy: ["127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
     bodyLimitBytes: 8 * 1024,
   });
-  registerRoutes(app, { tickets: deps.tickets, qr: deps.qr, guards: authGuards(deps.verifyToken) });
+  registerRoutes(app, {
+    tickets: deps.tickets,
+    qr: deps.qr,
+    guards: authGuards(deps.verifyToken),
+    internalToken: deps.internalToken,
+  });
   return app;
 }

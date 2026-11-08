@@ -51,6 +51,7 @@ async function main(): Promise<void> {
     tickets,
     qr,
     verifyToken: createTokenVerifier({ jwksUrl: config.JWKS_URL }),
+    internalToken: config.INTERNAL_API_TOKEN,
     readinessChecks: {
       postgres: async () => {
         await pool.query("select 1");

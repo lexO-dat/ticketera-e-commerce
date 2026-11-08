@@ -388,6 +388,7 @@ services:
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
       JWKS_URL: http://identity:3000/.well-known/jwks.json
       CATALOG_URL: http://catalog:3000
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-dev-token-change-me-0123456789}
       # Solo desarrollo: clave Ed25519 que firma el QR de las entradas (cámbiala fuera de desarrollo).
       TICKET_SIGNING_KEY: ${TICKET_SIGNING_KEY:-LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1DNENBUUF3QlFZREsyVndCQ0lFSUJCdHNTQk5LYzNrbldMYzRpdGdyaDRrb2YxN1hqMkdRZUFsRmZQd1hoWS8KLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo=}
     depends_on:

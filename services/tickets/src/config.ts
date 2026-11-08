@@ -7,6 +7,8 @@ const schema = baseServiceEnv.extend({
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   JWKS_URL: z.url(),
   CATALOG_URL: z.url(),
+  /** Secreto compartido de los endpoints /internal (notifications). */
+  INTERNAL_API_TOKEN: z.string().min(24),
   /** Clave privada Ed25519 (PKCS#8 PEM en base64) que firma el QR de las entradas. */
   TICKET_SIGNING_KEY: z
     .string()

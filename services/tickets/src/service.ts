@@ -232,6 +232,15 @@ export function createTicketService(options: {
       return withQr(result.rows);
     },
 
+    /** Entradas de una orden con su QR (notifications las adjunta al correo). */
+    async listByOrder(orderId: string): Promise<TicketDto[]> {
+      const result = await pool.query<TicketRow>(
+        "select * from tickets where order_id = $1 order by name, seat_label nulls last, unit_index",
+        [orderId],
+      );
+      return withQr(result.rows);
+    },
+
     async get(id: string): Promise<(TicketDto & { userId: string }) | undefined> {
       const result = await pool.query<TicketRow>("select * from tickets where id = $1", [id]);
       const row = result.rows[0];

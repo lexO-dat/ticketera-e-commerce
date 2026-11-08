@@ -114,6 +114,7 @@ describe.skipIf(!DATABASE_URL)("tickets (integración)", () => {
       tickets,
       qr,
       verifyToken: createTokenVerifier({ getKey: localKeySet(jwks) }),
+      internalToken: "internal-test-token-0123456789abcdef",
     });
   });
 
@@ -255,6 +256,15 @@ describe.skipIf(!DATABASE_URL)("tickets (integración)", () => {
       headers: staff,
     });
     expect(checked.json()).toMatchObject({ result: "ACCEPTED" });
+    expect((await app.inject({ url: `/internal/orders/${o.orderId}/tickets` })).statusCode).toBe(
+      404,
+    );
+    const internal = await app.inject({
+      url: `/internal/orders/${o.orderId}/tickets`,
+      headers: { "x-internal-token": "internal-test-token-0123456789abcdef" },
+    });
+    expect(internal.json().items).toHaveLength(5);
+    expect(internal.json().items[0].qr).toBeTruthy();
     const jwks = (await app.inject({ url: "/.well-known/jwks.json" })).json();
     expect(jwks.keys[0]).toMatchObject({ kty: "OKP", crv: "Ed25519" });
     expect(jwks.keys[0]).not.toHaveProperty("d");
