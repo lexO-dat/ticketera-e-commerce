@@ -119,6 +119,14 @@ const schemas = {
       .optional(),
   }),
   seat: z.strictObject({ blocked: z.boolean() }),
+  queue: z.strictObject({
+    enabled: z.boolean(),
+    opensAt: isoDate.nullish().transform((value) => value ?? null),
+    concurrentSlots: z.int().min(1).max(10_000),
+    windowMinutes: z.int().min(1).max(120),
+    admitBatchMax: z.int().min(1).max(1_000).default(50),
+    waitingMessage: optionalText(300),
+  }),
   product: z.strictObject({
     name: text(140),
     description: optionalText(4000),
@@ -172,6 +180,12 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDependencies): v
     const { slug } = parseInput(schemas.slug, request.params);
     publicCache(reply, maxAge);
     return events.getPublic(slug);
+  });
+
+  app.get("/v1/events/by-id/:id", async (request, reply) => {
+    const params = parseInput(id, request.params);
+    publicCache(reply, maxAge);
+    return events.getPublicById(params.id);
   });
 
   app.get("/v1/dates/:id/seat-map", async (request, reply) => {
@@ -263,6 +277,12 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDependencies): v
     const params = parseInput(id, request.params);
     await events.remove(actor(request), params.id, request.id);
     return reply.status(204).send();
+  });
+
+  app.put("/v1/admin/events/:id/queue", organizers, async (request) => {
+    const params = parseInput(id, request.params);
+    const body = parseInput(schemas.queue, request.body);
+    return events.updateQueue(actor(request), params.id, body, request.id);
   });
 
   app.post("/v1/admin/events/:id/dates", organizers, async (request, reply) => {

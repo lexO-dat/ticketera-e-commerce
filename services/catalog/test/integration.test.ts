@@ -453,6 +453,49 @@ describe.skipIf(!DATABASE_URL)("catalog (integración)", () => {
     expect(typeof dates[0]!.ticketTypes[0]!.price).toBe("string");
   });
 
+  it("configura la fila virtual del evento y la publica (por id para otros servicios)", async () => {
+    const lumenId = "e0000000-0000-0000-0000-000000000001";
+    const seeded = (await request("GET", `/v1/events/by-id/${lumenId}`)).json();
+    expect(seeded.queue).toMatchObject({ enabled: true, concurrentSlots: 250, windowMinutes: 10 });
+
+    const event = (
+      await request("POST", "/v1/admin/events", "organizerA", eventInput("Con fila"))
+    ).json();
+    expect(event.queue.enabled).toBe(false);
+    const queue = {
+      enabled: true,
+      opensAt: "2030-01-01T12:00:00Z",
+      concurrentSlots: 50,
+      windowMinutes: 8,
+      admitBatchMax: 10,
+      waitingMessage: "Espera tu turno",
+    };
+    expect(
+      (await request("PUT", `/v1/admin/events/${event.id}/queue`, "organizerB", queue)).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await request("PUT", `/v1/admin/events/${event.id}/queue`, "organizerA", {
+          ...queue,
+          concurrentSlots: 0,
+        })
+      ).statusCode,
+    ).toBe(400);
+    const updated = await request("PUT", `/v1/admin/events/${event.id}/queue`, "organizerA", queue);
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().queue).toEqual({ ...queue, opensAt: "2030-01-01T12:00:00.000Z" });
+
+    const byId = (await request("GET", `/v1/events/by-id/${event.id}`)).json();
+    expect(byId.queue.concurrentSlots).toBe(50);
+    expect(byId).not.toHaveProperty("ownerId");
+    expect((await outbox("EventoActualizado", event.id)).at(-1)!.queue).toMatchObject({
+      enabled: true,
+      windowMinutes: 8,
+    });
+    await request("DELETE", `/v1/admin/events/${event.id}`, "organizerA");
+    expect((await request("GET", `/v1/events/by-id/${event.id}`)).statusCode).toBe(404);
+  });
+
   it("slugs únicos aun con creaciones concurrentes del mismo título", async () => {
     const responses = await Promise.all(
       Array.from({ length: 10 }, () =>

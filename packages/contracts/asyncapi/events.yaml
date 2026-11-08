@@ -634,13 +634,24 @@ components:
               version: { const: 1 }
               data:
                 type: object
-                required: [eventId, slug, title, status, dates]
+                required: [eventId, slug, title, status, queue, dates]
                 properties:
                   eventId: { type: string, format: uuid }
                   slug: { type: string }
                   title: { type: string }
                   status: { type: string, enum: [draft, published, soldout, archived] }
                   ownerId: { type: [string, "null"], format: uuid }
+                  queue:
+                    type: object
+                    description: "Configuración de la fila virtual (ADR-06)."
+                    required: [enabled, opensAt, concurrentSlots, windowMinutes, admitBatchMax]
+                    properties:
+                      enabled: { type: boolean }
+                      opensAt: { type: [string, "null"], format: date-time }
+                      concurrentSlots: { type: integer, minimum: 1 }
+                      windowMinutes: { type: integer, minimum: 1 }
+                      admitBatchMax: { type: integer, minimum: 1 }
+                      waitingMessage: { type: [string, "null"] }
                   dates:
                     type: array
                     items:

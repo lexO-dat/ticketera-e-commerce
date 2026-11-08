@@ -47,6 +47,17 @@ insert into events (id, slug, title, artist, category, description, status, feat
  ('e0000000-0000-0000-0000-000000000007', 'ruido-blanco', 'Ruido Blanco', 'Ruido Blanco', 'conciertos', 'Regreso a los escenarios tras seis años, con formación original y set acústico de cierre.', 'published', true, null, '18+'),
  ('e0000000-0000-0000-0000-000000000008', 'maraton-de-la-costa', 'Maratón de la Costa', 'Organización Costa', 'deportes', 'Inscripción para la maratón 42K, media maratón y 10K por el borde costero.', 'published', false, null, 'TE');
 
+-- Fila virtual (queue_config del prototipo).
+update events set queue_enabled = true, queue_concurrent_slots = 250, queue_window_minutes = 10,
+  queue_waiting_message = 'Estás en la fila virtual. Puedes recargar la página: tu turno se conserva.'
+where id = 'e0000000-0000-0000-0000-000000000001';
+update events set queue_enabled = true, queue_concurrent_slots = 400, queue_window_minutes = 8,
+  queue_waiting_message = 'Alta demanda. Te avisaremos cuando sea tu turno.'
+where id = 'e0000000-0000-0000-0000-000000000002';
+update events set queue_enabled = true, queue_concurrent_slots = 150, queue_window_minutes = 12,
+  queue_waiting_message = 'Fila virtual activa por alta demanda.'
+where id = 'e0000000-0000-0000-0000-000000000007';
+
 -- Fechas relativas al momento del seed (como en el prototipo), a las 21:00 hora de Chile.
 insert into event_dates (id, event_id, venue_id, starts_at, doors_at, on_sale)
 select d.id::uuid, d.event_id::uuid, d.venue_id::uuid, t.starts_at, t.starts_at - d.doors_before, true

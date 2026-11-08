@@ -62,7 +62,28 @@ export interface EventDto {
   urgencyNote: string | null;
   ageRestriction: string | null;
   ownerId: string | null;
+  queue: QueueSettingsDto;
   dates: EventDateDto[];
+}
+
+/** Fila virtual del evento (ADR-06): catalog es dueño de la configuración; queue la aplica. */
+export interface QueueSettingsDto {
+  enabled: boolean;
+  /** Apertura de la venta: antes, los turnos quedan en prefila (se aleatorizan al abrir). */
+  opensAt: string | null;
+  concurrentSlots: number;
+  windowMinutes: number;
+  admitBatchMax: number;
+  waitingMessage: string | null;
+}
+
+export interface QueueSettingsInput {
+  enabled: boolean;
+  opensAt: Date | null;
+  concurrentSlots: number;
+  windowMinutes: number;
+  admitBatchMax: number;
+  waitingMessage: string | null;
 }
 
 export interface EventSummaryDto {
@@ -86,7 +107,7 @@ export interface EventSummaryDto {
   datesCount: number;
 }
 
-export type PublicEventDto = EventSummaryDto & { dates: EventDateDto[] };
+export type PublicEventDto = EventSummaryDto & { queue: QueueSettingsDto; dates: EventDateDto[] };
 
 export interface SeatMapDto {
   date: {
@@ -156,12 +177,20 @@ export interface ListEventsQuery {
 export interface EventService {
   listPublic(query: ListEventsQuery): Promise<{ events: EventSummaryDto[]; cities: string[] }>;
   getPublic(slug: string): Promise<PublicEventDto>;
+  /** Para otros servicios (inventory, queue): mismo contenido público, por id. */
+  getPublicById(id: string): Promise<PublicEventDto>;
   seatMap(dateId: string): Promise<SeatMapDto>;
   listForAdmin(actor: Actor): Promise<EventDto[]>;
   getForAdmin(actor: Actor, id: string): Promise<EventDto>;
   create(actor: Actor, input: EventInput, correlationId?: string): Promise<EventDto>;
   update(actor: Actor, id: string, input: EventInput, correlationId?: string): Promise<EventDto>;
   remove(actor: Actor, id: string, correlationId?: string): Promise<void>;
+  updateQueue(
+    actor: Actor,
+    id: string,
+    input: QueueSettingsInput,
+    correlationId?: string,
+  ): Promise<EventDto>;
   createDate(
     actor: Actor,
     eventId: string,
@@ -192,6 +221,12 @@ interface EventRow {
   urgency_note: string | null;
   age_restriction: string | null;
   owner_id: string | null;
+  queue_enabled: boolean;
+  queue_opens_at: Date | null;
+  queue_concurrent_slots: number;
+  queue_window_minutes: number;
+  queue_admit_batch_max: number;
+  queue_waiting_message: string | null;
   dates: {
     id: string;
     starts_at: string;
@@ -214,7 +249,9 @@ interface EventRow {
 /** Evento con fechas, recinto y tipos de entrada en una sola consulta. */
 const EVENT_SQL = `
   select e.id, e.slug, e.title, e.artist, e.category, e.description, e.image_id, e.status,
-         e.featured, e.urgency_note, e.age_restriction, e.owner_id,
+         e.featured, e.urgency_note, e.age_restriction, e.owner_id, e.queue_enabled,
+         e.queue_opens_at, e.queue_concurrent_slots, e.queue_window_minutes,
+         e.queue_admit_batch_max, e.queue_waiting_message,
          coalesce((
            select json_agg(json_build_object(
              'id', d.id, 'starts_at', d.starts_at, 'doors_at', d.doors_at, 'on_sale', d.on_sale,
@@ -262,6 +299,14 @@ export function eventDtoFromRow(row: EventRow, media: Pick<MediaService, "url">)
     urgencyNote: row.urgency_note,
     ageRestriction: row.age_restriction,
     ownerId: row.owner_id,
+    queue: {
+      enabled: row.queue_enabled,
+      opensAt: row.queue_opens_at ? row.queue_opens_at.toISOString() : null,
+      concurrentSlots: row.queue_concurrent_slots,
+      windowMinutes: row.queue_window_minutes,
+      admitBatchMax: row.queue_admit_batch_max,
+      waitingMessage: row.queue_waiting_message,
+    },
     dates: row.dates.map((date) => ({
       id: date.id,
       startsAt: toIso(date.starts_at)!,
@@ -340,6 +385,10 @@ export function filterAndSort(
   });
 }
 
+function toPublic(event: EventDto): PublicEventDto {
+  return { ...summarize(event), queue: event.queue, dates: event.dates };
+}
+
 export function createEventService(options: {
   pool: Pool;
   cache: ReadCache;
@@ -395,6 +444,7 @@ export function createEventService(options: {
           title: event.title,
           status: event.status,
           ownerId: event.ownerId,
+          queue: event.queue,
           dates: event.dates.map((date) => ({
             dateId: date.id,
             venueId: date.venue.id,
@@ -493,9 +543,43 @@ export function createEventService(options: {
       const event = await cache.get(`event:${slug}`, async () => {
         const found = await loadEvent(pool, "e.slug = $1", slug);
         if (!found || !PUBLIC_STATUSES.includes(found.status)) return null;
-        return { ...summarize(found), dates: found.dates } satisfies PublicEventDto;
+        return toPublic(found);
       });
       if (!event) throw AppError.notFound("El evento no existe");
+      return event;
+    },
+
+    async getPublicById(id) {
+      const event = await cache.get(`event-id:${id}`, async () => {
+        const found = await loadEvent(pool, "e.id = $1", id);
+        if (!found || !PUBLIC_STATUSES.includes(found.status)) return null;
+        return toPublic(found);
+      });
+      if (!event) throw AppError.notFound("El evento no existe");
+      return event;
+    },
+
+    async updateQueue(actor, id, input, correlationId) {
+      const event = await withTransaction(pool, async (client) => {
+        await lockEvent(client, actor, id);
+        await client.query(
+          `update events set queue_enabled = $2, queue_opens_at = $3, queue_concurrent_slots = $4,
+             queue_window_minutes = $5, queue_admit_batch_max = $6, queue_waiting_message = $7,
+             updated_at = now()
+           where id = $1`,
+          [
+            id,
+            input.enabled,
+            input.opensAt,
+            input.concurrentSlots,
+            input.windowMinutes,
+            input.admitBatchMax,
+            input.waitingMessage,
+          ],
+        );
+        return publishUpdated(client, id, correlationId);
+      });
+      await cache.invalidate();
       return event;
     },
 

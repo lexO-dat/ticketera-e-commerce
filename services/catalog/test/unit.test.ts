@@ -73,6 +73,14 @@ function event(overrides: Partial<EventDto> & Pick<EventDto, "id" | "title">): E
     urgencyNote: null,
     ageRestriction: null,
     ownerId: null,
+    queue: {
+      enabled: false,
+      opensAt: null,
+      concurrentSlots: 200,
+      windowMinutes: 10,
+      admitBatchMax: 50,
+      waitingMessage: null,
+    },
     dates: [],
     ...overrides,
   };

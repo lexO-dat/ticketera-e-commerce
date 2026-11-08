@@ -54,6 +54,25 @@ paths:
                     properties:
                       dates: { type: array, items: { $ref: "#/components/schemas/EventDate" } }
         "404": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/events/by-id/{id}:
+    get:
+      operationId: getEventById
+      summary: Igual que el detalle por slug, por id (lo usan inventory y queue)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Evento
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/EventSummary"
+                  - type: object
+                    required: [queue, dates]
+                    properties:
+                      queue: { $ref: "#/components/schemas/QueueSettings" }
+                      dates: { type: array, items: { $ref: "#/components/schemas/EventDate" } }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
   /v1/dates/{id}/seat-map:
     get:
       operationId: getSeatMap
@@ -232,6 +251,30 @@ paths:
       responses:
         "204": { description: Eliminado }
         "404": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/admin/events/{id}/queue:
+    put:
+      operationId: adminUpdateEventQueue
+      summary: Configura la fila virtual del evento (ADR-06)
+      security: [{ bearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled, concurrentSlots, windowMinutes]
+              properties:
+                enabled: { type: boolean }
+                opensAt: { type: [string, "null"], format: date-time }
+                concurrentSlots: { type: integer, minimum: 1, maximum: 10000 }
+                windowMinutes: { type: integer, minimum: 1, maximum: 120 }
+                admitBatchMax: { type: integer, minimum: 1, maximum: 1000 }
+                waitingMessage: { type: [string, "null"], maxLength: 300 }
+      responses:
+        "200": { $ref: "#/components/responses/Event" }
+        "400": { $ref: "./common.yaml#/components/responses/Problem" }
   /v1/admin/events/{id}/dates:
     post:
       operationId: adminCreateDate
@@ -484,7 +527,8 @@ components:
         datesCount: { type: integer, description: Fechas futuras }
     Event:
       type: object
-      required: [id, slug, title, category, status, featured, imageId, imageUrl, ownerId, dates]
+      required:
+        [id, slug, title, category, status, featured, imageId, imageUrl, ownerId, queue, dates]
       properties:
         id: { type: string, format: uuid }
         slug: { type: string }
@@ -499,7 +543,18 @@ components:
         urgencyNote: { type: [string, "null"] }
         ageRestriction: { type: [string, "null"] }
         ownerId: { type: [string, "null"], format: uuid }
+        queue: { $ref: "#/components/schemas/QueueSettings" }
         dates: { type: array, items: { $ref: "#/components/schemas/EventDate" } }
+    QueueSettings:
+      type: object
+      required: [enabled, opensAt, concurrentSlots, windowMinutes, admitBatchMax, waitingMessage]
+      properties:
+        enabled: { type: boolean }
+        opensAt: { type: [string, "null"], format: date-time }
+        concurrentSlots: { type: integer }
+        windowMinutes: { type: integer }
+        admitBatchMax: { type: integer }
+        waitingMessage: { type: [string, "null"] }
     Section:
       type: object
       required: [id, venueId, name, kind, capacity, sortOrder, shape]
