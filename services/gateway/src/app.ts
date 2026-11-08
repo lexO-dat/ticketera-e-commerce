@@ -25,6 +25,7 @@ export interface AppDependencies {
     | "INVENTORY_URLS"
     | "ORDERS_URLS"
     | "PAYMENTS_URLS"
+    | "TICKETS_URLS"
     | "CORS_ORIGINS"
     | "TRUST_PROXY"
     | "UPSTREAM_TIMEOUT_MS"

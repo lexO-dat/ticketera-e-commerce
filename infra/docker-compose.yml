@@ -156,7 +156,9 @@ services:
       retries: 20
 
   nginx:
-    build: ./nginx
+    build:
+      context: ..
+      dockerfile: infra/nginx/Dockerfile
     ports:
       - "127.0.0.1:8088:80"
       - "127.0.0.1:8443:443"
@@ -371,6 +373,31 @@ services:
       payments:
         condition: service_healthy
 
+  tickets:
+    build:
+      context: ..
+      dockerfile: services/tickets/Dockerfile
+    init: true
+    deploy:
+      replicas: 2
+    environment:
+      SERVICE_NAME: tickets
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://tickets:${PG_PASSWORD_TICKETS:-tickets-dev-password}@postgres-primary:5432/tickets
+      AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
+      JWKS_URL: http://identity:3000/.well-known/jwks.json
+      CATALOG_URL: http://catalog:3000
+      # Solo desarrollo: clave Ed25519 que firma el QR de las entradas (cámbiala fuera de desarrollo).
+      TICKET_SIGNING_KEY: ${TICKET_SIGNING_KEY:-LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1DNENBUUF3QlFZREsyVndCQ0lFSUJCdHNTQk5LYzNrbldMYzRpdGdyaDRrb2YxN1hqMkdRZUFsRmZQd1hoWS8KLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo=}
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      catalog:
+        condition: service_healthy
+
   gateway:
     build:
       context: ..
@@ -388,6 +415,7 @@ services:
       INVENTORY_URLS: http://inventory:3000
       ORDERS_URLS: http://orders:3000
       PAYMENTS_URLS: http://payments:3000
+      TICKETS_URLS: http://tickets:3000
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost:8443}
     ports:
       # La web (BFF) en desarrollo llama al gateway directo; el navegador entra por Nginx.
@@ -406,6 +434,8 @@ services:
       orders:
         condition: service_healthy
       payments:
+        condition: service_healthy
+      tickets:
         condition: service_healthy
 
   # Plantilla de servicio: `docker compose --profile template up -d --build template`.

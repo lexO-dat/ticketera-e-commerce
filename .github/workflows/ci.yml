@@ -71,6 +71,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx tsc --noEmit
       - run: npm run build
+      - name: App de validación (apps/scanner)
+        run: npm run typecheck -w @apps/scanner && npm run build -w @apps/scanner
 
   images:
     name: Imagen ${{ matrix.service }}
@@ -78,10 +80,18 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        service: [template, identity, gateway, catalog, queue, inventory, webpay-mock, payments, orders]
+        service: [template, identity, gateway, catalog, queue, inventory, webpay-mock, payments, orders, tickets]
     steps:
       - uses: actions/checkout@v5
       - name: Validar docker compose
         run: docker compose -f infra/docker-compose.yml --profile template config --quiet
       - name: Construir imagen
         run: docker build -f services/${{ matrix.service }}/Dockerfile -t ticketera/${{ matrix.service }}:ci .
+
+  edge:
+    name: Imagen nginx (borde + app de validación)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -f infra/nginx/Dockerfile -t ticketera/nginx:ci .

@@ -23,6 +23,8 @@ const schema = baseServiceEnv.extend({
   /** Réplicas de orders y payments (saga de compra). */
   ORDERS_URLS: urlList,
   PAYMENTS_URLS: urlList,
+  /** Réplicas de tickets (entradas y validación en puerta). */
+  TICKETS_URLS: urlList,
   /** Orígenes de navegador permitidos (CORS) separados por coma; vacío = ninguno. */
   CORS_ORIGINS: z
     .string()

@@ -74,6 +74,7 @@ describe("gateway", () => {
         INVENTORY_URLS: [`http://127.0.0.1:${port}`],
         ORDERS_URLS: [`http://127.0.0.1:${port}`],
         PAYMENTS_URLS: [`http://127.0.0.1:${port}`],
+        TICKETS_URLS: [`http://127.0.0.1:${port}`],
         CORS_ORIGINS: ["https://localhost:8443"],
         TRUST_PROXY: ["127.0.0.1"],
         UPSTREAM_TIMEOUT_MS: 2_000,
@@ -223,6 +224,8 @@ describe("gateway", () => {
     expect(back.json().upstreamUrl).toBe("/v1/return?token_ws=abc");
     const authorization = `Bearer ${await token(["customer"])}`;
     const cart = await gateway.inject({ url: "/orders/cart", headers: { authorization } });
+    const mine = await gateway.inject({ url: "/tickets/tickets", headers: { authorization } });
+    expect(mine.json().upstreamUrl).toBe("/v1/tickets");
     expect(cart.json().upstreamUrl).toBe("/v1/cart");
     expect(
       (await gateway.inject({ url: "/orders/admin/orders", headers: { authorization } }))
@@ -312,6 +315,7 @@ describe("gateway", () => {
         INVENTORY_URLS: ["http://127.0.0.1:1"],
         ORDERS_URLS: ["http://127.0.0.1:1"],
         PAYMENTS_URLS: ["http://127.0.0.1:1"],
+        TICKETS_URLS: ["http://127.0.0.1:1"],
         CORS_ORIGINS: [],
         TRUST_PROXY: [],
         UPSTREAM_TIMEOUT_MS: 1_000,

@@ -22,6 +22,7 @@ export function upstreamRoutes(
     | "INVENTORY_URLS"
     | "ORDERS_URLS"
     | "PAYMENTS_URLS"
+    | "TICKETS_URLS"
   >,
 ): UpstreamRoute[] {
   return [
@@ -72,5 +73,7 @@ export function upstreamRoutes(
       roles: ["admin"],
     },
     { prefix: "/payments", upstreams: config.PAYMENTS_URLS, rewritePrefix: "/v1" },
+    // Entradas; la validación en puerta exige rol de personal en el servicio.
+    { prefix: "/tickets", upstreams: config.TICKETS_URLS, rewritePrefix: "/v1" },
   ];
 }

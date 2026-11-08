@@ -13,6 +13,7 @@
 .vinxi
 .wrangler
 infra
+!infra/nginx
 docs
 public
 src
