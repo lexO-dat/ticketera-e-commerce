@@ -25,7 +25,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   FORBIDDEN: 403,
   NOT_FOUND: 404,
   CONFLICT: 409,
-  IDEMPOTENCY_CONFLICT: 409,
+  // 422: misma clave con otra solicitud (docs/services/payments.md §6).
+  IDEMPOTENCY_CONFLICT: 422,
   PRECONDITION_FAILED: 412,
   PAYLOAD_TOO_LARGE: 413,
   RATE_LIMITED: 429,
