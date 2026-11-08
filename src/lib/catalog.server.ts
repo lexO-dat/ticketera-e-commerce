@@ -45,12 +45,22 @@ export type ApiEventSummary = {
   datesCount: number;
 };
 
+export type ApiQueueSettings = {
+  enabled: boolean;
+  opensAt: string | null;
+  concurrentSlots: number;
+  windowMinutes: number;
+  admitBatchMax: number;
+  waitingMessage: string | null;
+};
+
 export type ApiEvent = Omit<
   ApiEventSummary,
   "nextDate" | "city" | "venueName" | "minPrice" | "capacity" | "datesCount"
 > & {
   imageId: string | null;
   ownerId: string | null;
+  queue: ApiQueueSettings;
   dates: ApiEventDate[];
 };
 

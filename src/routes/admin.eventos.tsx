@@ -253,11 +253,19 @@ function AdminEvents() {
 
 type QueueConfig = {
   enabled: boolean;
+  opens_at: string | null;
   concurrent_slots: number;
   window_minutes: number;
+  admit_batch_max: number;
   waiting_message: string | null;
-  simulated_queue_size: number;
 };
+
+/** ISO → valor de <input type="datetime-local"> en la hora local del navegador. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
 
 function QueueEditor({
   eventId,
@@ -272,7 +280,8 @@ function QueueEditor({
     enabled: config?.enabled ?? false,
     concurrentSlots: config?.concurrent_slots ?? 200,
     windowMinutes: config?.window_minutes ?? 10,
-    simulatedQueueSize: config?.simulated_queue_size ?? 1200,
+    admitBatchMax: config?.admit_batch_max ?? 50,
+    opensAt: toLocalInput(config?.opens_at ?? null),
     waitingMessage: config?.waiting_message ?? "",
   });
 
@@ -284,7 +293,8 @@ function QueueEditor({
           enabled: state.enabled,
           concurrentSlots: state.concurrentSlots,
           windowMinutes: state.windowMinutes,
-          simulatedQueueSize: state.simulatedQueueSize,
+          admitBatchMax: state.admitBatchMax,
+          opensAt: state.opensAt || null,
           waitingMessage: state.waitingMessage || null,
         },
       }),
@@ -323,11 +333,18 @@ function QueueEditor({
             onChange={(e) => setState({ ...state, windowMinutes: Number(e.target.value) })}
           />
         </Field>
-        <Field label="Tamaño de fila simulado">
+        <Field label="Admisiones máx. por segundo">
           <TextInput
             type="number"
-            value={state.simulatedQueueSize}
-            onChange={(e) => setState({ ...state, simulatedQueueSize: Number(e.target.value) })}
+            value={state.admitBatchMax}
+            onChange={(e) => setState({ ...state, admitBatchMax: Number(e.target.value) })}
+          />
+        </Field>
+        <Field label="Apertura de la venta" hint="Antes, la fila es prefila y se sortea al abrir">
+          <TextInput
+            type="datetime-local"
+            value={state.opensAt}
+            onChange={(e) => setState({ ...state, opensAt: e.target.value })}
           />
         </Field>
       </div>

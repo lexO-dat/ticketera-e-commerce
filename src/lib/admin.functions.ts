@@ -33,29 +33,48 @@ export const adminOverview = createServerFn({ method: "GET" })
         amount: number | string;
         created_at: string;
       }[],
-      queues: [] as { event_id: string; state: string }[],
     };
-    const { orders, metrics, queues } = await legacy(async () => {
+    const { orders, metrics } = await legacy(async () => {
       const { adminDb } = await import("./db.server");
       const db = await adminDb();
-      const [{ data: orders }, { data: metrics }, { data: queues }] = await Promise.all([
+      const [{ data: orders }, { data: metrics }] = await Promise.all([
         db
           .from("orders")
           .select("id, order_code, buyer_name, buyer_email, total, status, created_at")
           .order("created_at", { ascending: false })
           .limit(300),
         db.from("event_metrics").select("event_id, kind, quantity, amount, created_at").limit(5000),
-        db.from("queue_sessions").select("event_id, state"),
       ]);
-      return { orders: orders ?? [], metrics: metrics ?? [], queues: queues ?? [] };
+      return { orders: orders ?? [], metrics: metrics ?? [] };
     }, empty);
 
     const paid = orders.filter((o) => o.status === "paid");
     const revenue = paid.reduce((s, o) => s + Number(o.total), 0);
     const types = events.flatMap((e) => e.dates.flatMap((d) => d.ticketTypes));
-    // Vendidos: los informa inventory (Fase 4).
-    const ticketsSold = 0;
     const capacity = types.reduce((s, t) => s + t.capacity, 0);
+    // Ocupación (inventory) y fila virtual (queue) de los eventos publicados.
+    const live = events.filter((e) => e.status === "published");
+    const auth = { accessToken: context.accessToken };
+    const [availability, queueStats] = await Promise.all([
+      Promise.all(
+        live.map((e) =>
+          gatewayFetch<{ items: { capacity: number; available: number; sold: number }[] }>(
+            `/inventory/availability/events/${e.id}`,
+          ).catch(() => ({ items: [] })),
+        ),
+      ),
+      Promise.all(
+        live
+          .filter((e) => e.queue.enabled)
+          .map((e) =>
+            gatewayFetch<{ waiting: number; active: number; prequeue: number }>(
+              `/queue/admin/events/${e.id}`,
+              auth,
+            ).catch(() => ({ waiting: 0, active: 0, prequeue: 0 })),
+          ),
+      ),
+    ]);
+    const ticketsSold = availability.flatMap((a) => a.items).reduce((s, i) => s + i.sold, 0);
 
     const days = new Map<string, { date: string; revenue: number; orders: number }>();
     for (const order of paid) {
@@ -89,7 +108,10 @@ export const adminOverview = createServerFn({ method: "GET" })
       .slice(0, 6);
 
     const queueCounts = { waiting: 0, active: 0, expired: 0 } as Record<string, number>;
-    for (const q of queues) queueCounts[q.state] = (queueCounts[q.state] ?? 0) + 1;
+    for (const q of queueStats) {
+      queueCounts["waiting"] = (queueCounts["waiting"] ?? 0) + q.waiting + q.prequeue;
+      queueCounts["active"] = (queueCounts["active"] ?? 0) + q.active;
+    }
 
     return {
       kpis: {
@@ -110,7 +132,7 @@ export const adminOverview = createServerFn({ method: "GET" })
   });
 
 /** Evento del catálogo con la forma que espera el panel (heredada del prototipo). */
-function toAdminEvent(event: ApiEvent, queue: Record<string, QueueConfigRow>) {
+function toAdminEvent(event: ApiEvent, sold: Map<string, number>) {
   return {
     id: event.id,
     slug: event.slug,
@@ -137,22 +159,20 @@ function toAdminEvent(event: ApiEvent, queue: Record<string, QueueConfigRow>) {
         price: Number(type.price),
         service_fee: Number(type.fee),
         capacity: type.capacity,
-        // Vendidos: los informa inventory (Fase 4).
-        sold: 0,
+        sold: sold.get(type.id) ?? 0,
         section_id: type.sectionId,
       })),
     })),
-    queue_config: queue[event.id] ?? null,
+    queue_config: {
+      enabled: event.queue.enabled,
+      opens_at: event.queue.opensAt,
+      concurrent_slots: event.queue.concurrentSlots,
+      window_minutes: event.queue.windowMinutes,
+      admit_batch_max: event.queue.admitBatchMax,
+      waiting_message: event.queue.waitingMessage,
+    },
   };
 }
-
-type QueueConfigRow = {
-  enabled: boolean;
-  concurrent_slots: number;
-  window_minutes: number;
-  waiting_message: string | null;
-  simulated_queue_size: number;
-};
 
 const EVENT_CATEGORIES = ["conciertos", "deportes", "familia", "festivales", "teatro"] as const;
 const EVENT_STATUSES = ["draft", "published", "soldout", "archived"] as const;
@@ -163,25 +183,26 @@ export const adminEvents = createServerFn({ method: "GET" })
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
     const { gatewayFetch } = await import("./auth/gateway.server");
-    const { legacy } = await import("./catalog.server");
     const { items } = await gatewayFetch<{ items: ApiEvent[] }>("/catalog/admin/events", {
       accessToken: context.accessToken,
     });
-    // Configuración de la fila virtual: sigue en el prototipo hasta la Fase 4 (queue).
-    const queue = await legacy(
-      async () => {
-        const { adminDb } = await import("./db.server");
-        const db = await adminDb();
-        const { data } = await db
-          .from("queue_config")
-          .select(
-            "event_id, enabled, concurrent_slots, window_minutes, waiting_message, simulated_queue_size",
-          );
-        return Object.fromEntries((data ?? []).map((row) => [row.event_id, row]));
-      },
-      {} as Record<string, QueueConfigRow>,
+    // Ocupación por tipo de entrada (inventory); si no responde, el panel igual carga.
+    const sold = new Map<string, number>();
+    await Promise.all(
+      items
+        .filter((event) => event.status === "published" || event.status === "soldout")
+        .map((event) =>
+          gatewayFetch<{ items: { ticketTypeId: string; capacity: number; available: number }[] }>(
+            `/inventory/availability/events/${event.id}`,
+          )
+            .then((result) => {
+              for (const item of result.items)
+                sold.set(item.ticketTypeId, item.capacity - item.available);
+            })
+            .catch(() => undefined),
+        ),
     );
-    return items.map((event) => toAdminEvent(event, queue));
+    return items.map((event) => toAdminEvent(event, sold));
   });
 
 export const adminSaveEvent = createServerFn({ method: "POST" })
@@ -260,6 +281,7 @@ export const adminUploadImage = createServerFn({ method: "POST" })
     );
   });
 
+/** Fila virtual del evento (ADR-06): la configuración es de catalog; queue la aplica al instante. */
 export const adminSaveQueue = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .validator((input: unknown) =>
@@ -267,9 +289,10 @@ export const adminSaveQueue = createServerFn({ method: "POST" })
       .object({
         eventId: z.string().uuid(),
         enabled: z.boolean(),
-        concurrentSlots: z.number().int().min(1).max(5000),
+        opensAt: z.string().nullable().optional(),
+        concurrentSlots: z.number().int().min(1).max(10000),
         windowMinutes: z.number().int().min(1).max(120),
-        simulatedQueueSize: z.number().int().min(0).max(100000),
+        admitBatchMax: z.number().int().min(1).max(1000),
         waitingMessage: z.string().max(300).nullable().optional(),
       })
       .parse(input),
@@ -277,20 +300,19 @@ export const adminSaveQueue = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const { error } = await db.from("queue_config").upsert(
-      {
-        event_id: data.eventId,
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch(`/catalog/admin/events/${data.eventId}/queue`, {
+      method: "PUT",
+      accessToken: context.accessToken,
+      body: {
         enabled: data.enabled,
-        concurrent_slots: data.concurrentSlots,
-        window_minutes: data.windowMinutes,
-        simulated_queue_size: data.simulatedQueueSize,
-        waiting_message: data.waitingMessage ?? null,
+        opensAt: data.opensAt ? new Date(data.opensAt).toISOString() : null,
+        concurrentSlots: data.concurrentSlots,
+        windowMinutes: data.windowMinutes,
+        admitBatchMax: data.admitBatchMax,
+        waitingMessage: data.waitingMessage || null,
       },
-      { onConflict: "event_id" },
-    );
-    if (error) throw new Error(error.message);
+    });
     return { ok: true };
   });
 
@@ -300,9 +322,11 @@ export const adminResetQueue = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertAdmin } = await import("./admin.server");
     assertAdmin(context.roles);
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    await db.from("queue_sessions").delete().eq("event_id", data.eventId);
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    await gatewayFetch(`/queue/admin/events/${data.eventId}/reset`, {
+      method: "POST",
+      accessToken: context.accessToken,
+    });
     return { ok: true };
   });
 

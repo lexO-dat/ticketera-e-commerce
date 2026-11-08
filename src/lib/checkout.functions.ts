@@ -3,7 +3,6 @@ import { z } from "zod";
 
 import { requireAuth } from "@/lib/auth/middleware";
 
-const HOLD_MINUTES = 10;
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function code(prefix: string, length: number) {
@@ -13,64 +12,6 @@ function code(prefix: string, length: number) {
   }
   return `${prefix}${out}`;
 }
-
-export const holdSeats = createServerFn({ method: "POST" })
-  .validator((input: unknown) =>
-    z
-      .object({
-        eventDateId: z.string().uuid(),
-        seatIds: z.array(z.string().uuid()).max(8),
-        sessionToken: z.string().min(6).max(80),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data }) => {
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    const nowIso = new Date().toISOString();
-    const expires = new Date(Date.now() + HOLD_MINUTES * 60_000).toISOString();
-
-    // Drop this session's previous, unsold holds for the date.
-    await db
-      .from("seat_holds")
-      .delete()
-      .eq("event_date_id", data.eventDateId)
-      .eq("session_token", data.sessionToken)
-      .eq("sold", false);
-
-    // Clear expired holds so freed seats can be taken again.
-    await db
-      .from("seat_holds")
-      .delete()
-      .eq("event_date_id", data.eventDateId)
-      .eq("sold", false)
-      .lt("expires_at", nowIso);
-
-    if (data.seatIds.length === 0) return { held: [], conflicts: [], expiresAt: expires };
-
-    const held: string[] = [];
-    const conflicts: string[] = [];
-    for (const seatId of data.seatIds) {
-      const { error } = await db.from("seat_holds").insert({
-        event_date_id: data.eventDateId,
-        seat_id: seatId,
-        session_token: data.sessionToken,
-        expires_at: expires,
-      });
-      if (error) conflicts.push(seatId);
-      else held.push(seatId);
-    }
-    return { held, conflicts, expiresAt: expires };
-  });
-
-export const releaseSeats = createServerFn({ method: "POST" })
-  .validator((input: unknown) => z.object({ sessionToken: z.string().min(6).max(80) }).parse(input))
-  .handler(async ({ data }) => {
-    const { adminDb } = await import("./db.server");
-    const db = await adminDb();
-    await db.from("seat_holds").delete().eq("session_token", data.sessionToken).eq("sold", false);
-    return { ok: true };
-  });
 
 export const validatePromo = createServerFn({ method: "POST" })
   .validator((input: unknown) => z.object({ code: z.string().min(2).max(40) }).parse(input))

@@ -1,12 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import type { ApiEventDate, ApiEventSummary, ApiSeatMap, ApiVenue } from "./catalog.server";
+import type {
+  ApiEventDate,
+  ApiEventSummary,
+  ApiQueueSettings,
+  ApiSeatMap,
+  ApiVenue,
+} from "./catalog.server";
 
 /**
- * Catálogo público: lo sirve el microservicio `catalog` a través del gateway (Fase 3), con caché
- * de lectura en Redis. La disponibilidad real (vendidos / reservados) llega con `inventory`
- * (Fase 4); mientras tanto `sold` es 0 y las reservas de butacas se leen del prototipo.
+ * Catálogo público: lo sirve el microservicio `catalog` a través del gateway, con caché de lectura
+ * en Redis. La ocupación (vendidas + reservadas) y las butacas tomadas vienen de `inventory`.
  */
 
 export type CatalogEvent = {
@@ -51,6 +56,22 @@ function toCatalogEvent(event: ApiEventSummary): CatalogEvent {
   };
 }
 
+/**
+ * Ocupadas (vendidas + reservadas vigentes) por tipo de entrada, desde inventory. Si inventory no
+ * responde, el catálogo se sigue mostrando (la reserva igual valida la disponibilidad real).
+ */
+async function soldByTicketType(eventId: string): Promise<Map<string, number>> {
+  const { gatewayFetch } = await import("./auth/gateway.server");
+  try {
+    const { items } = await gatewayFetch<{
+      items: { ticketTypeId: string; capacity: number; available: number }[];
+    }>(`/inventory/availability/events/${eventId}`);
+    return new Map(items.map((item) => [item.ticketTypeId, item.capacity - item.available]));
+  } catch {
+    return new Map();
+  }
+}
+
 function queryString(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value) search.set(key, value);
@@ -88,7 +109,7 @@ export const getEvent = createServerFn({ method: "GET" })
   .validator((input: unknown) => z.object({ slug: z.string().max(80) }).parse(input))
   .handler(async ({ data }) => {
     const { gatewayFetch } = await import("./auth/gateway.server");
-    let event: ApiEventSummary & { dates: ApiEventDate[] };
+    let event: ApiEventSummary & { dates: ApiEventDate[]; queue: ApiQueueSettings };
     try {
       event = await gatewayFetch(`/catalog/events/${encodeURIComponent(data.slug)}`);
     } catch (error) {
@@ -96,25 +117,16 @@ export const getEvent = createServerFn({ method: "GET" })
       throw error;
     }
 
-    // La fila virtual sigue en el prototipo hasta la Fase 4 (queue).
-    const { legacy } = await import("./catalog.server");
-    const queue = await legacy(async () => {
-      const { publicDb } = await import("./db.server");
-      const { data: row } = await publicDb()
-        .from("queue_config")
-        .select("enabled, concurrent_slots, window_minutes, waiting_message, simulated_queue_size")
-        .eq("event_id", event.id)
-        .maybeSingle();
-      return row
-        ? {
-            enabled: row.enabled,
-            concurrentSlots: row.concurrent_slots,
-            windowMinutes: row.window_minutes,
-            waitingMessage: row.waiting_message,
-            simulatedQueueSize: row.simulated_queue_size,
-          }
-        : null;
-    }, null);
+    const sold = await soldByTicketType(event.id);
+    const queue = event.queue.enabled
+      ? {
+          enabled: true,
+          concurrentSlots: event.queue.concurrentSlots,
+          windowMinutes: event.queue.windowMinutes,
+          waitingMessage: event.queue.waitingMessage,
+          opensAt: event.queue.opensAt,
+        }
+      : null;
 
     return {
       event: toCatalogEvent(event),
@@ -130,7 +142,7 @@ export const getEvent = createServerFn({ method: "GET" })
           price: Number(type.price),
           fee: Number(type.fee),
           capacity: type.capacity,
-          sold: 0,
+          sold: sold.get(type.id) ?? 0,
           sectionId: type.sectionId,
           sectionKind: type.sectionKind,
           sortOrder: type.sortOrder,
@@ -152,21 +164,15 @@ export const getSeatMap = createServerFn({ method: "GET" })
       throw error;
     }
 
-    // Reservas de butacas: siguen en el prototipo hasta la Fase 4 (inventory).
-    const { legacy } = await import("./catalog.server");
-    const taken = await legacy(async () => {
-      const { publicDb } = await import("./db.server");
-      const { data: holds } = await publicDb()
-        .from("seat_holds")
-        .select("seat_id, expires_at, sold")
-        .eq("event_date_id", data.eventDateId);
-      const now = Date.now();
-      return new Set(
-        (holds ?? [])
-          .filter((hold) => hold.sold || new Date(hold.expires_at).getTime() > now)
-          .map((hold) => hold.seat_id),
-      );
-    }, new Set<string>());
+    // Ocupación en vivo (inventory): butacas vendidas o reservadas y cupos de sectores generales.
+    const [taken, sold] = await Promise.all([
+      gatewayFetch<{ unavailableSeatIds: string[] }>(
+        `/inventory/availability/dates/${data.eventDateId}/seats`,
+      )
+        .then((result) => new Set(result.unavailableSeatIds))
+        .catch(() => new Set<string>()),
+      soldByTicketType(map.date.event.id),
+    ]);
 
     return {
       date: {
@@ -199,7 +205,7 @@ export const getSeatMap = createServerFn({ method: "GET" })
         price: Number(type.price),
         fee: Number(type.fee),
         capacity: type.capacity,
-        sold: 0,
+        sold: sold.get(type.id) ?? 0,
         sectionId: type.sectionId,
       })),
       seats: map.seats.map((seat) => ({

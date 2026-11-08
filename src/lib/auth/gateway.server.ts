@@ -29,10 +29,12 @@ interface GatewayRequest {
   /** Multipart (subida de archivos); excluyente con `body`. */
   form?: FormData;
   accessToken?: string | undefined;
+  /** Cabeceras adicionales permitidas (p. ej. `x-admission-token`). */
+  headers?: Record<string, string>;
 }
 
 export async function gatewayFetch<T>(path: string, request: GatewayRequest = {}): Promise<T> {
-  const headers: Record<string, string> = { accept: "application/json" };
+  const headers: Record<string, string> = { ...request.headers, accept: "application/json" };
   // Con `form`, fetch fija el content-type multipart con su boundary.
   if (request.body !== undefined) headers["content-type"] = "application/json";
   if (request.accessToken) headers["authorization"] = `Bearer ${request.accessToken}`;

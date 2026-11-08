@@ -15,10 +15,9 @@ import {
 } from "@/components/kit/Text";
 import { GhostButton, PillButton } from "@/components/kit/PillButton";
 import { getSeatMap } from "@/lib/catalog.functions";
-import { holdSeats } from "@/lib/checkout.functions";
+import { reserveTickets } from "@/lib/inventory.functions";
 import { joinQueue, queueStatus } from "@/lib/queue.functions";
 import { addToCart, type CartItem } from "@/lib/cart";
-import { getSessionToken } from "@/lib/session";
 import { countdown, dateAndTime, money } from "@/lib/format";
 
 export const Route = createFileRoute("/comprar/$dateId")({
@@ -46,7 +45,6 @@ function PurchaseRoute() {
 function PurchasePage() {
   const { dateId } = Route.useParams();
   const navigate = useNavigate();
-  const [token, setToken] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueView | null>(null);
   const [selected, setSelected] = useState<MapSeat[]>([]);
   const [generalQty, setGeneralQty] = useState<Record<string, number>>({});
@@ -55,8 +53,6 @@ function PurchasePage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => setToken(getSessionToken()), []);
-
   const mapQuery = useQuery({
     queryKey: ["seatmap", dateId],
     queryFn: () => getSeatMap({ data: { eventDateId: dateId } }),
@@ -64,22 +60,36 @@ function PurchasePage() {
 
   const eventId = mapQuery.data?.date.event?.id ?? null;
 
+  // Sala de espera: entra una vez y consulta respetando el Retry-After del servidor (con jitter).
   useEffect(() => {
-    if (!eventId || !token) return;
+    if (!eventId) return;
     let cancelled = false;
-    void joinQueue({ data: { eventId, sessionToken: token } }).then((view) => {
-      if (!cancelled) setQueue(view);
-    });
-    const timer = setInterval(() => {
-      void queueStatus({ data: { eventId, sessionToken: token } }).then((view) => {
-        if (!cancelled) setQueue(view);
-      });
-    }, 2500);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = (pollMs: number) => {
+      timer = setTimeout(poll, pollMs * (0.8 + Math.random() * 0.4));
+    };
+    const poll = () => {
+      queueStatus({ data: { eventId } })
+        .then((view) => {
+          if (cancelled) return;
+          setQueue(view);
+          // Admitido: se sigue consultando con calma para la cuenta regresiva y el vencimiento.
+          schedule(view.state === "active" ? 15_000 : view.pollMs);
+        })
+        .catch(() => !cancelled && schedule(5_000));
+    };
+    joinQueue({ data: { eventId } })
+      .then((view) => {
+        if (cancelled) return;
+        setQueue(view);
+        schedule(view.state === "active" ? 15_000 : view.pollMs);
+      })
+      .catch(() => !cancelled && schedule(5_000));
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
     };
-  }, [eventId, token]);
+  }, [eventId]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -115,27 +125,40 @@ function PurchasePage() {
   }
 
   async function confirm() {
-    if (!data || !token || totalCount === 0) return;
+    if (!data || !eventId || totalCount === 0) return;
     setBusy(true);
     setError(null);
     try {
-      if (selected.length > 0) {
-        const result = await holdSeats({
-          data: {
-            eventDateId: dateId,
-            seatIds: selected.map((s) => s.id),
-            sessionToken: token,
-          },
-        });
-        if (result.conflicts.length > 0) {
-          setError("Algunas butacas fueron tomadas por otra persona. Revisa el mapa e intenta de nuevo.");
-          setSelected((prev) => prev.filter((s) => !result.conflicts.includes(s.id)));
-          await mapQuery.refetch();
-          setBusy(false);
-          return;
-        }
-        setHoldUntil(new Date(result.expiresAt).getTime());
+      // Reserva exclusiva por 10 min en inventory (butacas y sectores generales).
+      const seatedByType = new Map<string, string[]>();
+      for (const seat of selected) {
+        const ticket = ticketBySection.get(seat.sectionId);
+        if (ticket) seatedByType.set(ticket.id, [...(seatedByType.get(ticket.id) ?? []), seat.id]);
       }
+      const result = await reserveTickets({
+        data: {
+          eventId,
+          eventDateId: dateId,
+          seated: [...seatedByType].map(([ticketTypeId, seatIds]) => ({ ticketTypeId, seatIds })),
+          general: Object.entries(generalQty)
+            .filter(([, qty]) => qty > 0)
+            .map(([ticketTypeId, quantity]) => ({ ticketTypeId, quantity })),
+        },
+      });
+      if (!result.ok) {
+        setError(
+          result.reason === "SEAT_TAKEN"
+            ? "Algunas butacas fueron tomadas por otra persona. Revisa el mapa e intenta de nuevo."
+            : result.message,
+        );
+        if (result.conflicts.length > 0) {
+          setSelected((prev) => prev.filter((s) => !result.conflicts.some((c) => c.includes(s.id))));
+        }
+        await mapQuery.refetch();
+        setBusy(false);
+        return;
+      }
+      setHoldUntil(new Date(result.expiresAt).getTime());
 
       const eventInfo = data.date.event;
       const items: CartItem[] = [];
