@@ -212,13 +212,3 @@ export const getOrder = createServerFn({ method: "GET" })
       throw error;
     }
   });
-
-export const myOrders = createServerFn({ method: "GET" })
-  .middleware([requireAuth])
-  .handler(async ({ context }): Promise<ApiOrder[]> => {
-    const { gatewayFetch } = await import("./auth/gateway.server");
-    const result = await gatewayFetch<{ items: ApiOrder[] }>("/orders/orders", {
-      accessToken: context.accessToken,
-    });
-    return result.items;
-  });

@@ -40,9 +40,13 @@ export const myOrders = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }): Promise<MyOrder[]> => {
     const { gatewayFetch } = await import("./auth/gateway.server");
-    const { items } = await gatewayFetch<{ items: ApiOrder[] }>("/orders/orders", {
-      accessToken: context.accessToken,
-    });
+    const [{ items }, tickets] = await Promise.all([
+      gatewayFetch<{ items: ApiOrder[] }>("/orders/orders", { accessToken: context.accessToken }),
+      // Entradas emitidas por `tickets` (si no responde, la cuenta igual muestra las órdenes).
+      gatewayFetch<{
+        items: { id: string; code: string; orderCode: string; name: string; status: string }[];
+      }>("/tickets/tickets", { accessToken: context.accessToken }).catch(() => ({ items: [] })),
+    ]);
     return items.map((order) => ({
       id: order.id,
       orderCode: order.orderCode,
@@ -67,8 +71,9 @@ export const myOrders = createServerFn({ method: "GET" })
             typeof attributes["sectionName"] === "string" ? attributes["sectionName"] : line.name,
           seatLabel:
             line.seatIds.length > 0 ? `${line.seatIds.length} butaca(s) numerada(s)` : null,
-          // Las entradas (QR firmado) las emite `tickets` en la Fase 6.
-          tickets: [],
+          tickets: tickets.items
+            .filter((ticket) => ticket.orderCode === order.orderCode && ticket.name === line.name)
+            .map((ticket) => ({ id: ticket.id, ticketCode: ticket.code, orderItemId: line.id })),
         };
       }),
     }));

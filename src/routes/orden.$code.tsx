@@ -9,6 +9,7 @@ import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/com
 import { PillButton, PillLink } from "@/components/kit/PillButton";
 import { ORDER_STATUS_LABELS } from "@/lib/account.functions";
 import { getOrder, payOrder, type ApiOrder } from "@/lib/orders.functions";
+import { myTickets, type MyTicket } from "@/lib/tickets.functions";
 import { dateAndTime, money } from "@/lib/format";
 
 /** `?pago=` lo agrega payments al volver del adquirente; el estado real se lee de la orden. */
@@ -139,6 +140,8 @@ function OrderPage() {
           </div>
         ) : null}
 
+        {data.status === "CONFIRMED" ? <OrderTickets code={data.orderCode} /> : null}
+
         <Hairline className="mt-10" />
 
         <div className="grid">
@@ -193,5 +196,52 @@ function Row({ label, value }: { label: string; value: string }) {
       <MetaText className="inline">{label}</MetaText>
       <span className="text-body">{value}</span>
     </div>
+  );
+}
+
+const TICKET_STATUS: Record<MyTicket["status"], string> = {
+  ISSUED: "Válida",
+  CHECKED_IN: "Usada",
+  VOIDED: "Anulada",
+};
+
+/** Entradas con QR (se emiten unos segundos después de confirmarse el pago). */
+function OrderTickets({ code }: { code: string }) {
+  const { data } = useQuery({
+    queryKey: ["tickets", code],
+    queryFn: () => myTickets({ data: { orderCode: code } }),
+    refetchInterval: (query) => ((query.state.data?.length ?? 0) === 0 ? 1500 : false),
+  });
+  if (!data || data.length === 0) {
+    return <MetaText className="mt-8">Emitiendo tus entradas…</MetaText>;
+  }
+  return (
+    <section className="mt-10 grid gap-6">
+      <SectionTitle>Tus entradas</SectionTitle>
+      <MetaText>Presenta el QR en el acceso. Cada entrada sirve para un ingreso.</MetaText>
+      <div className="grid gap-6 sm:grid-cols-2">
+        {data.map((ticket) => (
+          <article key={ticket.id} className="grid gap-3 rounded-card bg-plaster p-5">
+            {ticket.qrImage ? (
+              <img
+                src={ticket.qrImage}
+                alt={`Código QR de la entrada ${ticket.code}`}
+                className="aspect-square w-full max-w-[220px] bg-white"
+              />
+            ) : null}
+            <span className="text-body">{ticket.name}</span>
+            <MetaText>
+              {ticket.startsAt ? `${dateAndTime(ticket.startsAt)} · ` : ""}
+              {ticket.venueName ?? ""}
+            </MetaText>
+            {ticket.seatLabel ? <MetaText>{ticket.seatLabel}</MetaText> : null}
+            <MetaText>
+              <span className="font-roboto tracking-[0.08em]">{ticket.code}</span> ·{" "}
+              {TICKET_STATUS[ticket.status]}
+            </MetaText>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
