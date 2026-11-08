@@ -360,6 +360,7 @@ services:
       INVENTORY_URL: http://inventory:3000
       CATALOG_URL: http://catalog:3000
       PAYMENTS_URL: http://payments:3000
+      TICKETS_URL: http://tickets:3000
       SEED_DEMO_DATA: ${ORDERS_SEED_DEMO_DATA:-true}
     depends_on:
       postgres-primary:
@@ -397,6 +398,36 @@ services:
       rabbitmq:
         condition: service_healthy
       catalog:
+        condition: service_healthy
+
+  notifications:
+    build:
+      context: ..
+      dockerfile: services/notifications/Dockerfile
+    init: true
+    environment:
+      SERVICE_NAME: notifications
+      PORT: "3000"
+      LOG_LEVEL: info
+      AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      TICKETS_URL: http://tickets:3000
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-dev-token-change-me-0123456789}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-https://localhost:8443}
+      # Desarrollo: Mailpit. Para un proveedor real basta con SMTP_HOST/PORT/SECURITY y la API key
+      # como SMTP_PASSWORD (ver services/notifications/README.md).
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURITY: ${SMTP_SECURITY:-none}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-Ticketera <no-responder@ticketera.local>}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis-primary:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
 
   gateway:

@@ -58,6 +58,42 @@ jobs:
       - run: npm test
       - run: npm run build:backend
 
+  notifications:
+    name: Notifications (Python: ruff, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/notifications
+    services:
+      redis:
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
+      rabbitmq:
+        image: rabbitmq:4-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: ci
+          RABBITMQ_DEFAULT_PASS: ci
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_port_connectivity" --health-interval 5s
+          --health-timeout 10s --health-retries 30
+    env:
+      TEST_REDIS_URL: redis://localhost:6379
+      TEST_AMQP_URL: amqp://ci:ci@localhost:5672
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check src tests
+      - run: uv run ruff format --check src tests
+      - run: uv run pytest -q
+
   web:
     name: Web (typecheck, build)
     runs-on: ubuntu-latest
@@ -80,7 +116,7 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        service: [template, identity, gateway, catalog, queue, inventory, webpay-mock, payments, orders, tickets]
+        service: [template, identity, gateway, catalog, queue, inventory, webpay-mock, payments, orders, tickets, notifications]
     steps:
       - uses: actions/checkout@v5
       - name: Validar docker compose
