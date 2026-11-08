@@ -17,9 +17,10 @@ cp .env.example .env  # la web habla con el gateway en GATEWAY_URL
 npm run dev           # web (TanStack Start) en http://localhost:8080 · vía Nginx: https://localhost:8443
 ```
 
-Administrador de desarrollo: `admin@ticketera.local` / `admin-dev-password-123`. Los enlaces de
-verificación y recuperación de contraseña quedan en la tabla `outbox` de la base `identity` hasta que
-exista `notifications` (Fase 7).
+Administrador de desarrollo: `admin@ticketera.local` / `admin-dev-password-123`. Los correos
+(verificación, recuperación de contraseña, compra, entradas con QR, cancelaciones y reembolsos) los
+envía `notifications` y en desarrollo llegan a Mailpit: http://localhost:8025. Para usar un proveedor
+real basta con su API key como contraseña SMTP (ver [`services/notifications`](services/notifications/README.md)).
 
 Para comprar: el pago se hace en el formulario del adquirente simulado (`webpay-mock`). El resultado
 depende del **email del comprador** en el checkout: `@acceptme.com` aprueba, `@rejectme.com` rechaza
@@ -40,24 +41,25 @@ Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 
 ## Monorepo
 
-| Ruta                    | Contenido                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------- |
-| `src/`                  | Web actual (TanStack Start); se mueve a `apps/web` al terminar la migración (patrón _strangler_)  |
-| `packages/commons`      | `@shared/commons`: errores, `ItemVendible`, CLP, logger, BD/outbox, eventos, Redis, servidor HTTP |
-| `packages/contracts`    | `@shared/contracts`: OpenAPI y AsyncAPI                                                           |
-| `services/template`     | Plantilla de servicio; `npm run new:service -- <nombre>` crea uno nuevo                           |
-| `services/identity`     | Cuentas, sesiones (JWT EdDSA + refresh rotativo), roles y API admin de usuarios                   |
-| `services/gateway`      | Entrada única: enrutamiento, verificación de JWT, rate limiting, CORS, request-id                 |
-| `services/catalog`      | Eventos, recintos, butacas, productos (`ItemVendible`), imágenes y caché de lectura               |
-| `services/queue`        | Fila virtual: sala de espera en Redis, admisor con lock de líder, token de admisión               |
-| `services/inventory`    | Disponibilidad y reservas de 10 min con bloqueo pesimista (0 % sobreventa)                        |
-| `services/orders`       | Carro (Redis), checkout idempotente, órdenes y promociones atómicas; orquesta la saga de compra   |
-| `services/payments`     | Intentos de pago, idempotencia, ledger de doble entrada, reembolsos y conciliación                |
-| `services/tickets`      | Entradas con QR firmado, historial y check-in atómico                                             |
-| `apps/scanner`          | App de validación en puerta (https://localhost:8443/scanner/)                                     |
-| `services/webpay-mock`  | Adquirente simulado (único mock): API y formulario de Webpay Plus                                 |
-| `tools/queue-simulator` | Bots que hacen fila, reservan y pagan; verifica cupos, órdenes, ledger y 0 sobreventas            |
-| `infra/`                | `docker-compose.yml`, Postgres (réplica síncrona), Nginx                                          |
+| Ruta                     | Contenido                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------- |
+| `src/`                   | Web actual (TanStack Start); se mueve a `apps/web` al terminar la migración (patrón _strangler_)  |
+| `packages/commons`       | `@shared/commons`: errores, `ItemVendible`, CLP, logger, BD/outbox, eventos, Redis, servidor HTTP |
+| `packages/contracts`     | `@shared/contracts`: OpenAPI y AsyncAPI                                                           |
+| `services/template`      | Plantilla de servicio; `npm run new:service -- <nombre>` crea uno nuevo                           |
+| `services/identity`      | Cuentas, sesiones (JWT EdDSA + refresh rotativo), roles y API admin de usuarios                   |
+| `services/gateway`       | Entrada única: enrutamiento, verificación de JWT, rate limiting, CORS, request-id                 |
+| `services/catalog`       | Eventos, recintos, butacas, productos (`ItemVendible`), imágenes y caché de lectura               |
+| `services/queue`         | Fila virtual: sala de espera en Redis, admisor con lock de líder, token de admisión               |
+| `services/inventory`     | Disponibilidad y reservas de 10 min con bloqueo pesimista (0 % sobreventa)                        |
+| `services/orders`        | Carro (Redis), checkout idempotente, órdenes y promociones atómicas; orquesta la saga de compra   |
+| `services/payments`      | Intentos de pago, idempotencia, ledger de doble entrada, reembolsos y conciliación                |
+| `services/tickets`       | Entradas con QR firmado, historial y check-in atómico                                             |
+| `services/notifications` | Correos transaccionales (Python 3.12, SMTP): cuenta, compra, entradas con QR y reembolsos         |
+| `apps/scanner`           | App de validación en puerta (https://localhost:8443/scanner/)                                     |
+| `services/webpay-mock`   | Adquirente simulado (único mock): API y formulario de Webpay Plus                                 |
+| `tools/queue-simulator`  | Bots que hacen fila, reservan y pagan; verifica cupos, órdenes, ledger y 0 sobreventas            |
+| `infra/`                 | `docker-compose.yml`, Postgres (réplica síncrona), Nginx                                          |
 
 | Comando                                           | Qué hace                                                                                          |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------- |

@@ -32,7 +32,7 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 - [x] API admin de usuarios, bootstrap del primer admin, claves EdDSA cifradas con rotación
 - [x] Gateway: JWKS, rate limiting (Redis), CORS, request-id, enrutamiento con balanceo entre réplicas
 - [x] La web usa identity para autenticarse (BFF con cookies HttpOnly, ADR-08)
-- [ ] Correos de verificación y recuperación: los envía `notifications` (Fase 7)
+- [x] Correos de verificación y recuperación: los envía `notifications` (Fase 7)
 
 ## Fase 3 — catalog
 
@@ -67,11 +67,14 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 
 - [x] Emisión asíncrona (al confirmarse la orden) con QR firmado EdDSA; historial en la orden y en Mi cuenta
 - [x] App de validación (`apps/scanner`, cámara o código) con check-in atómico y auditoría de cada escaneo
-- [x] Un reembolso anula las entradas no usadas
+- [x] Un reembolso anula las entradas no usadas; una orden con entradas ya validadas no se reembolsa
 
 ## Fase 7 — notifications (Python)
 
-- [ ] Correos de confirmación, entradas y cuenta vía SMTP propio
+- [x] Servicio Python 3.12 (aio-pika, aiosmtplib, Jinja2) con la misma topología de colas, reintentos y DLQ que commons
+- [x] Correos de cuenta (verificación, recuperación), compra confirmada, entradas con QR embebido y cancelación/reembolso
+- [x] Un correo por evento (dedupe en Redis, `Message-ID` = id del evento); fallas permanentes a la DLQ
+- [x] SMTP estándar: Mailpit en desarrollo; proveedor real solo con variables (API key como contraseña SMTP)
 
 ## Fase 8 — Corte final
 
