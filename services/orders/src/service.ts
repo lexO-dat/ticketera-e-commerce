@@ -554,6 +554,8 @@ export function createOrderService(options: {
                   eventId: line.event_id,
                   eventDateId: line.event_date_id,
                   seatIds: line.seat_ids,
+                  // Datos para mostrar la entrada (del ItemVendible congelado en la orden).
+                  attributes: line.attributes,
                 })),
               },
             }),
