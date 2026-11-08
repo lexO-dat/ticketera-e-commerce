@@ -41,13 +41,18 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 - [x] Media propia (re-codificación a WebP, ADR-09) y caché de lectura en Redis invalidada por generación
 - [x] Migración de los datos semilla desde `supabase/migrations` (mismos UUID)
 - [x] La web lee y administra el catálogo vía gateway; página de productos en el panel
-- [ ] Vendidos / disponibilidad en el catálogo público: los aporta `inventory` (Fase 4)
+- [x] Vendidos / disponibilidad en el catálogo público: los aporta `inventory` (Fase 4)
+- [x] Configuración de la fila virtual por evento (catalog es su dueño)
 
 ## Fase 4 — inventory + queue
 
-- [ ] Reservas con bloqueo pesimista y expiración perezosa (ADR-03)
-- [ ] Fila virtual con admisor y token de admisión (ADR-06)
-- [ ] `tools/queue-simulator` con verificación de 0 sobreventas
+- [x] Reservas con bloqueo pesimista, expiración perezosa y barrido (ADR-03)
+- [x] Fila virtual con prefila aleatorizada, admisor con lock de líder y token de admisión (ADR-06)
+- [x] El gateway pre-verifica el token de admisión; inventory exige `jti` vigente
+- [x] `tools/queue-simulator` con verificación de 0 sobreventas (2.000 bots en local, ver su README)
+- [x] La web usa la fila y las reservas reales (turno en cookie HttpOnly)
+- [ ] `ReservaVendida` y conversión de reserva en venta: con orders (Fase 5)
+- [ ] Prueba de 10.000 usuarios en infraestructura dedicada (Fase 8)
 
 ## Fase 5 — orders + payments + webpay-mock
 

@@ -12,7 +12,7 @@ Requisitos: Node 22.18+, Docker con Compose.
 
 ```bash
 npm install
-npm run infra:up      # infraestructura + identity y catalog (2 réplicas c/u) + gateway
+npm run infra:up      # infraestructura + identity, catalog, queue, inventory (2 réplicas c/u) + gateway
 cp .env.example .env  # la web habla con el gateway en GATEWAY_URL
 npm run dev           # web (TanStack Start) en http://localhost:8080 · vía Nginx: https://localhost:8443
 ```
@@ -34,16 +34,19 @@ Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 
 ## Monorepo
 
-| Ruta                 | Contenido                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------- |
-| `src/`               | Web actual (TanStack Start); se mueve a `apps/web` al terminar la migración (patrón _strangler_)  |
-| `packages/commons`   | `@shared/commons`: errores, `ItemVendible`, CLP, logger, BD/outbox, eventos, Redis, servidor HTTP |
-| `packages/contracts` | `@shared/contracts`: OpenAPI y AsyncAPI                                                           |
-| `services/template`  | Plantilla de servicio; `npm run new:service -- <nombre>` crea uno nuevo                           |
-| `services/identity`  | Cuentas, sesiones (JWT EdDSA + refresh rotativo), roles y API admin de usuarios                   |
-| `services/gateway`   | Entrada única: enrutamiento, verificación de JWT, rate limiting, CORS, request-id                 |
-| `services/catalog`   | Eventos, recintos, butacas, productos (`ItemVendible`), imágenes y caché de lectura               |
-| `infra/`             | `docker-compose.yml`, Postgres (réplica síncrona), Nginx                                          |
+| Ruta                    | Contenido                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------- |
+| `src/`                  | Web actual (TanStack Start); se mueve a `apps/web` al terminar la migración (patrón _strangler_)  |
+| `packages/commons`      | `@shared/commons`: errores, `ItemVendible`, CLP, logger, BD/outbox, eventos, Redis, servidor HTTP |
+| `packages/contracts`    | `@shared/contracts`: OpenAPI y AsyncAPI                                                           |
+| `services/template`     | Plantilla de servicio; `npm run new:service -- <nombre>` crea uno nuevo                           |
+| `services/identity`     | Cuentas, sesiones (JWT EdDSA + refresh rotativo), roles y API admin de usuarios                   |
+| `services/gateway`      | Entrada única: enrutamiento, verificación de JWT, rate limiting, CORS, request-id                 |
+| `services/catalog`      | Eventos, recintos, butacas, productos (`ItemVendible`), imágenes y caché de lectura               |
+| `services/queue`        | Fila virtual: sala de espera en Redis, admisor con lock de líder, token de admisión               |
+| `services/inventory`    | Disponibilidad y reservas de 10 min con bloqueo pesimista (0 % sobreventa)                        |
+| `tools/queue-simulator` | Bots de carga de la fila y la reserva; verifica cupos y 0 sobreventas                             |
+| `infra/`                | `docker-compose.yml`, Postgres (réplica síncrona), Nginx                                          |
 
 | Comando                                           | Qué hace                                                                                          |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
