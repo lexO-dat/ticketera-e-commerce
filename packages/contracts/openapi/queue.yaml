@@ -1,0 +1,178 @@
+openapi: 3.1.0
+info:
+  title: queue-service
+  version: 1.0.0
+  description: >
+    Fila virtual (ADR-06, docs/services/virtual-queue.md): sala de espera en Redis, admisor con
+    lock de líder y token de admisión EdDSA ligado a usuario y evento. La configuración por evento
+    es de catalog. Público vía gateway: `/queue/*` → `/v1/*`; `/queue/admin/*` solo admin.
+servers:
+  - url: http://localhost:3003
+security: [{ bearer: [] }]
+paths:
+  /health/live:
+    $ref: "./common.yaml#/paths/~1health~1live"
+  /health/ready:
+    $ref: "./common.yaml#/paths/~1health~1ready"
+  /.well-known/jwks.json:
+    get:
+      operationId: getAdmissionJwks
+      summary: Claves públicas de los tokens de admisión (gateway, inventory, orders)
+      security: []
+      responses:
+        "200":
+          description: JWKS
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keys]
+                properties:
+                  keys: { type: array, items: { type: object } }
+  /v1/events/{eventId}/join:
+    post:
+      operationId: joinQueue
+      summary: Entra a la fila (idempotente; un turno por usuario y evento)
+      parameters: [{ $ref: "#/components/parameters/EventId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
+        "503": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/events/{eventId}/status:
+    get:
+      operationId: queueStatus
+      summary: Estado del turno; respetar Retry-After entre consultas (heartbeat)
+      parameters: [{ $ref: "#/components/parameters/EventId" }]
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "503": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/events/{eventId}/leave:
+    post:
+      operationId: leaveQueue
+      parameters: [{ $ref: "#/components/parameters/EventId" }]
+      responses:
+        "204": { description: Turno abandonado }
+  /v1/events/{eventId}/complete:
+    post:
+      operationId: completeTurn
+      summary: Termina la ventana de compra del admitido y libera el cupo
+      parameters: [{ $ref: "#/components/parameters/EventId" }]
+      responses:
+        "204": { description: Cupo liberado }
+  /v1/admin/events/{eventId}:
+    get:
+      operationId: queueStats
+      summary: Métricas en vivo (rol admin)
+      parameters: [{ $ref: "#/components/parameters/EventId" }]
+      responses:
+        "200":
+          description: Métricas
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [
+                    eventId,
+                    config,
+                    waiting,
+                    prequeue,
+                    active,
+                    opened,
+                    paused,
+                    admissionRatePerSecond,
+                  ]
+                properties:
+                  eventId: { type: string, format: uuid }
+                  config: { type: object }
+                  waiting: { type: integer }
+                  prequeue: { type: integer }
+                  active: { type: integer }
+                  opened: { type: boolean }
+                  paused: { type: boolean }
+                  admissionRatePerSecond: { type: number }
+  /v1/admin/events/{eventId}/pause:
+    post:
+      operationId: pauseQueue
+      summary: Pausa la admisión (incidente)
+      parameters: [{ $ref: "#/components/parameters/EventId" }]
+      responses:
+        "204": { description: Pausada }
+  /v1/admin/events/{eventId}/resume:
+    post:
+      operationId: resumeQueue
+      parameters: [{ $ref: "#/components/parameters/EventId" }]
+      responses:
+        "204": { description: Reanudada }
+  /v1/admin/events/{eventId}/reset:
+    post:
+      operationId: resetQueue
+      summary: Vacía la fila del evento (turnos y admisiones)
+      parameters: [{ $ref: "#/components/parameters/EventId" }]
+      responses:
+        "200":
+          description: Claves eliminadas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  removedKeys: { type: integer }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT (EdDSA)
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    TurnStatus:
+      type: object
+      required:
+        [
+          eventId,
+          state,
+          position,
+          ahead,
+          waiting,
+          etaSeconds,
+          opensAt,
+          admissionToken,
+          expiresAt,
+          windowMinutes,
+          message,
+          retryAfterSeconds,
+        ]
+      properties:
+        eventId: { type: string, format: uuid }
+        state:
+          type: string
+          enum:
+            [NOT_REQUIRED, NONE, PREQUEUE, WAITING, ADMITTED, EXPIRED, COMPLETED, LEFT, ABANDONED]
+        position: { type: [integer, "null"], description: "1 = el siguiente en entrar" }
+        ahead: { type: [integer, "null"] }
+        waiting: { type: integer }
+        etaSeconds: { type: [integer, "null"] }
+        opensAt: { type: [string, "null"], format: date-time }
+        admissionToken:
+          type: [string, "null"]
+          description: "Solo en ADMITTED; se envía como X-Admission-Token a inventory y orders"
+        expiresAt: { type: [string, "null"], format: date-time }
+        windowMinutes: { type: integer }
+        message: { type: [string, "null"] }
+        retryAfterSeconds: { type: [integer, "null"] }
+  responses:
+    Status:
+      description: Estado del turno
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Segundos hasta la próxima consulta (agregar jitter)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TurnStatus" }
