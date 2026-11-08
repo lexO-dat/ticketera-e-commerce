@@ -13,6 +13,7 @@ import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { type ReadCache, createReadCache, noCache } from "../src/cache.js";
+import { type MetricsService, createMetricsService } from "../src/metrics/service.js";
 import { seedDemoData } from "../src/seed.js";
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL;
@@ -29,6 +30,7 @@ describe.skipIf(!DATABASE_URL)("catalog (integración)", () => {
   let pool: Pool;
   let app: FastifyInstance;
   let redis: ReturnType<typeof createRedis> | undefined;
+  let metrics: MetricsService;
   let privateKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
   const schema = `catalog_${newId().replaceAll("-", "").slice(0, 12)}`;
   const users = {
@@ -134,10 +136,12 @@ describe.skipIf(!DATABASE_URL)("catalog (integración)", () => {
       redis = createRedis({ url: REDIS_URL, connectionName: "catalog-test", logger });
       cache = createReadCache({ redis, ttlSeconds: 30, logger, prefix: `${schema}:` });
     }
+    metrics = createMetricsService({ pool, redis, keyPrefix: `${schema}:metrics` });
     app = buildApp({
       logger,
       pool,
       cache,
+      metrics,
       verifyToken: createTokenVerifier({ getKey: localKeySet(jwks) }),
       mediaPublicPath: "/api/catalog/media",
       mediaMaxUploadBytes: 2 * 1024 * 1024,
@@ -662,5 +666,103 @@ describe.skipIf(!DATABASE_URL)("catalog (integración)", () => {
     );
     expect(missing.statusCode).toBe(400);
     await request("DELETE", `/v1/admin/events/${event.json().id}`, "organizerA");
+  });
+
+  it("métricas del embudo: vistas en lote, eventos de dominio idempotentes y alcance por dueño", async () => {
+    const LUMEN = "e0000000-0000-0000-0000-000000000001";
+    for (let n = 0; n < 5; n++) {
+      expect((await request("POST", `/v1/events/${LUMEN}/views`)).statusCode).toBe(202);
+    }
+    // Un id inexistente se acepta (endpoint público barato) y se descarta al volcar.
+    await request("POST", `/v1/events/${newId()}/views`);
+    expect((await request("POST", "/v1/events/no-uuid/views")).statusCode).toBe(400);
+    await metrics.flushViews();
+
+    const ticketType = await pool.query<{ id: string }>(
+      "select id from ticket_types where event_date_id = $1 limit 1",
+      [LUMEN_DATE],
+    );
+    const envelope = (type: string, data: Record<string, unknown>) => ({
+      id: newId(),
+      type,
+      version: 1,
+      source: "test",
+      occurredAt: new Date().toISOString(),
+      aggregateId: newId(),
+      data,
+    });
+    const reservation = envelope("ReservaCreada", {
+      reservationId: newId(),
+      userId: newId(),
+      itemId: ticketType.rows[0]!.id,
+      quantity: 2,
+      expiresAt: new Date().toISOString(),
+    });
+    await metrics.handleEvent(reservation);
+    await metrics.handleEvent(reservation); // repetido: no se cuenta dos veces
+    await metrics.handleEvent(
+      envelope("OrdenCreada", { orderId: newId(), userId: newId(), total: "1", eventIds: [LUMEN] }),
+    );
+    await metrics.handleEvent(
+      envelope("OrdenConfirmada", {
+        orderId: newId(),
+        userId: newId(),
+        total: "250000",
+        lines: [
+          {
+            lineId: newId(),
+            kind: "ticket_type",
+            itemId: newId(),
+            name: "VIP",
+            quantity: 2,
+            unitPrice: "120000",
+            unitFee: "5000",
+            eventId: LUMEN,
+            seatIds: [],
+          },
+          {
+            lineId: newId(),
+            kind: "product",
+            itemId: newId(),
+            name: "Polera",
+            quantity: 1,
+            unitPrice: "15000",
+            unitFee: "0",
+            eventId: null,
+            seatIds: [],
+          },
+        ],
+      }),
+    );
+
+    const summary = (await request("GET", "/v1/admin/metrics?days=7", "admin")).json();
+    expect(summary.funnel).toEqual({ view: 5, add_to_cart: 2, checkout: 1, purchase: 2 });
+    const lumen = summary.events.find((e: { eventId: string }) => e.eventId === LUMEN);
+    expect(lumen).toMatchObject({
+      views: 5,
+      addToCart: 2,
+      checkouts: 1,
+      purchases: 2,
+      revenue: "250000",
+    });
+    expect(summary.daily).toHaveLength(1);
+    expect(summary.daily[0]).toMatchObject({ views: 5, purchases: 2, revenue: "250000" });
+
+    // El organizador solo ve sus eventos (Lumen es de la plataforma); el cliente, nada.
+    expect((await request("GET", "/v1/admin/metrics", "organizerB")).json().events).toEqual([]);
+    expect((await request("GET", "/v1/admin/metrics", "customer")).statusCode).toBe(403);
+  });
+
+  it("newsletter: misma respuesta aunque ya esté suscrito; correo normalizado", async () => {
+    const email = `Fan-${newId().slice(0, 8)}@Example.com`;
+    expect((await request("POST", "/v1/newsletter", undefined, { email })).statusCode).toBe(202);
+    expect((await request("POST", "/v1/newsletter", undefined, { email })).statusCode).toBe(202);
+    expect(
+      (await request("POST", "/v1/newsletter", undefined, { email: "no-es-correo" })).statusCode,
+    ).toBe(400);
+    const rows = await pool.query("select email from newsletter_subscribers where email = $1", [
+      email.toLowerCase(),
+    ]);
+    expect(rows.rowCount).toBe(1);
   });
 });

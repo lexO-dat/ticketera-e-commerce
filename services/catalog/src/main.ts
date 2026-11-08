@@ -8,6 +8,7 @@ import { createRedis } from "@shared/commons/redis";
 import { buildApp } from "./app.js";
 import { createReadCache } from "./cache.js";
 import { readConfig } from "./config.js";
+import { METRICS_SUBSCRIPTION, createMetricsService } from "./metrics/service.js";
 import { seedDemoData } from "./seed.js";
 
 const MIGRATIONS_DIR = fileURLToPath(new URL("../migrations", import.meta.url));
@@ -35,6 +36,21 @@ async function main(): Promise<void> {
   });
   const relay = new OutboxRelay({ pool, publisher: bus, logger });
 
+  // Embudo de ventas: vistas acumuladas en Redis y volcadas en lotes; el resto, por eventos.
+  const metrics = createMetricsService({ pool, redis });
+  await bus.subscribe({ ...METRICS_SUBSCRIPTION, handler: (event) => metrics.handleEvent(event) });
+  let flushing = false;
+  const flusher = setInterval(() => {
+    if (flushing) return;
+    flushing = true;
+    metrics
+      .flushViews()
+      .catch((error: unknown) => logger.warn({ err: error }, "no se pudieron volcar las vistas"))
+      .finally(() => {
+        flushing = false;
+      });
+  }, config.METRICS_FLUSH_SECONDS * 1000);
+
   const app = buildApp({
     logger,
     pool,
@@ -42,6 +58,7 @@ async function main(): Promise<void> {
     verifyToken: createTokenVerifier({ jwksUrl: config.JWKS_URL }),
     mediaPublicPath: config.MEDIA_PUBLIC_PATH,
     mediaMaxUploadBytes: config.MEDIA_MAX_UPLOAD_BYTES,
+    metrics,
     readinessChecks: {
       postgres: async () => {
         await pool.query("select 1");
@@ -61,7 +78,17 @@ async function main(): Promise<void> {
     logger,
     shutdownTimeoutMs: config.SHUTDOWN_TIMEOUT_MS,
     // Se cierran en orden inverso: primero el relay, al final la BD.
-    onShutdown: [() => pool.end(), () => redis.quit(), () => bus.close(), () => relay.stop()],
+    onShutdown: [
+      () => pool.end(),
+      () => redis.quit(),
+      () => bus.close(),
+      () => relay.stop(),
+      // Último volcado antes de cerrar Redis y la BD.
+      async () => {
+        clearInterval(flusher);
+        await metrics.flushViews().catch(() => 0);
+      },
+    ],
   });
 }
 

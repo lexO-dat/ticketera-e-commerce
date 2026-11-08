@@ -8,6 +8,7 @@ import type { ReadCache } from "./cache.js";
 import { createEventService } from "./events/service.js";
 import { type SellableItemCatalog, defaultSellableCatalog } from "./items/registry.js";
 import { createMediaService } from "./media/service.js";
+import type { MetricsService } from "./metrics/service.js";
 import { createProductService } from "./products/service.js";
 import { registerRoutes } from "./routes.js";
 import { createVenueService } from "./venues/service.js";
@@ -22,6 +23,7 @@ export interface AppDependencies {
   publicMaxAgeSeconds?: number;
   items?: SellableItemCatalog;
   readinessChecks?: Record<string, ReadinessCheck>;
+  metrics: MetricsService;
 }
 
 /** Construye la app sin abrir puertos: los tests la usan con `app.inject`. */
@@ -50,6 +52,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       products: createProductService(shared),
       media,
       items: deps.items ?? defaultSellableCatalog(),
+      metrics: deps.metrics,
       guards: authGuards(deps.verifyToken),
       publicMaxAgeSeconds: deps.publicMaxAgeSeconds ?? 5,
     });

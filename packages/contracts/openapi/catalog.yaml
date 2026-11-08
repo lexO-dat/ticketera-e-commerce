@@ -177,6 +177,85 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/SellableItem" } }
                   kinds: { type: array, items: { type: string } }
+  /v1/events/{id}/views:
+    post:
+      operationId: recordEventView
+      summary: Cuenta una vista de la página del evento (embudo de ventas)
+      description: >
+        Se acumula en Redis y se vuelca en lotes a la BD. Público, con rate limit por IP en el
+        gateway. Ids inexistentes se descartan al volcar.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "202": { description: Registrada }
+        "400": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/newsletter:
+    post:
+      operationId: subscribeNewsletter
+      summary: Suscribe un correo al newsletter (misma respuesta si ya estaba suscrito)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+      responses:
+        "202": { description: Suscrito }
+        "400": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/admin/metrics:
+    get:
+      operationId: adminMetrics
+      summary: Embudo de ventas por evento y por día (admin todos; organizer sus eventos)
+      description: >
+        Vistas (web), reservas (`ReservaCreada`), checkouts (`OrdenCreada`) y compras
+        (`OrdenConfirmada`, monto bruto de las líneas en CLP). Días en hora de Chile.
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 366, default: 30 } }
+      responses:
+        "200":
+          description: Resumen
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, funnel, events, daily]
+                properties:
+                  from: { type: string, format: date }
+                  funnel:
+                    type: object
+                    required: [view, add_to_cart, checkout, purchase]
+                    properties:
+                      view: { type: integer }
+                      add_to_cart: { type: integer }
+                      checkout: { type: integer }
+                      purchase: { type: integer }
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      required: [eventId, views, addToCart, checkouts, purchases, revenue]
+                      properties:
+                        eventId: { type: string, format: uuid }
+                        views: { type: integer }
+                        addToCart: { type: integer }
+                        checkouts: { type: integer }
+                        purchases: { type: integer }
+                        revenue: { $ref: "#/components/schemas/Money" }
+                  daily:
+                    type: array
+                    items:
+                      type: object
+                      required: [date, views, purchases, revenue]
+                      properties:
+                        date: { type: string, format: date }
+                        views: { type: integer }
+                        purchases: { type: integer }
+                        revenue: { $ref: "#/components/schemas/Money" }
   /v1/admin/media:
     post:
       operationId: uploadMedia

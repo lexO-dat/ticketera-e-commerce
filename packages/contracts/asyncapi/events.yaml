@@ -169,7 +169,7 @@ operations:
       $ref: "#/channels/TurnoCompletado"
   publishReservaCreada:
     action: send
-    summary: "Publicado por `inventory`."
+    summary: "Publicado por `inventory`; lo consume `catalog` (embudo de ventas)."
     channel:
       $ref: "#/channels/ReservaCreada"
   publishReservaLiberada:
@@ -184,12 +184,12 @@ operations:
       $ref: "#/channels/ReservaVendida"
   publishOrdenCreada:
     action: send
-    summary: "Publicado por `orders`."
+    summary: "Publicado por `orders`; lo consumen `queue`, `catalog` (embudo)."
     channel:
       $ref: "#/channels/OrdenCreada"
   publishOrdenConfirmada:
     action: send
-    summary: "Publicado por `orders`; lo consumen `tickets`, `notifications`."
+    summary: "Publicado por `orders`; lo consumen `tickets`, `notifications`, `catalog` (embudo)."
     channel:
       $ref: "#/channels/OrdenConfirmada"
   publishOrdenCancelada:
@@ -472,6 +472,8 @@ components:
                         itemId: { type: string, format: uuid }
                         name: { type: string }
                         quantity: { type: integer, minimum: 1 }
+                        unitPrice: { $ref: "#/components/schemas/Money" }
+                        unitFee: { $ref: "#/components/schemas/Money" }
                         eventId: { type: [string, "null"], format: uuid }
                         eventDateId: { type: [string, "null"], format: uuid }
                         seatIds: { type: array, items: { type: string, format: uuid } }

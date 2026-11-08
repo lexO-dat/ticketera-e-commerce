@@ -64,6 +64,21 @@ export function defaultRules(perMinute: number): RateLimitRule[] {
       matches: (method, url) =>
         method === "POST" && (url === "/orders/checkout" || url.endsWith("/pay")),
     },
+    // Endpoints públicos de catalog (embudo y newsletter): baratos, pero no deben inflarse con bots.
+    {
+      name: "event-views",
+      limit: 60,
+      windowSeconds: 60,
+      by: "ip",
+      matches: (method, url) => method === "POST" && /^\/catalog\/events\/[^/]+\/views$/.test(url),
+    },
+    {
+      name: "newsletter",
+      limit: 5,
+      windowSeconds: 600,
+      by: "ip",
+      matches: post("/catalog/newsletter"),
+    },
     { name: "global", limit: perMinute, windowSeconds: 60, by: "user", matches: () => true },
   ];
 }

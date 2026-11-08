@@ -22,6 +22,8 @@ const schema = baseServiceEnv.extend({
     .min(64 * 1024)
     .max(20 * 1024 * 1024)
     .default(8 * 1024 * 1024),
+  /** Cada cuánto se vuelcan a la BD las vistas acumuladas en Redis. */
+  METRICS_FLUSH_SECONDS: z.coerce.number().int().min(1).max(300).default(10),
   /** Carga los datos de demostración (seed/demo.sql) si el catálogo está vacío. */
   SEED_DEMO_DATA: envBoolean.default(false),
 });

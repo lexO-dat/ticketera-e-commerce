@@ -1,4 +1,4 @@
--- Datos de demostración, migrados de supabase/migrations (seed del prototipo).
+-- Datos de demostración, migrados del seed del prototipo (Supabase, ya eliminado).
 -- Solo se cargan con SEED_DEMO_DATA=true y si el catálogo está vacío (ver src/seed.ts).
 -- Se conservan los UUID de recintos, sectores, eventos y fechas del prototipo; butacas y tipos de
 -- entrada (que allá eran aleatorios) usan UUID deterministas para que el seed sea reproducible.

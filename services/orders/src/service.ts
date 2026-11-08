@@ -567,6 +567,8 @@ export function createOrderService(options: {
                   itemId: line.item_id,
                   name: line.name,
                   quantity: line.quantity,
+                  unitPrice: line.unit_price.toString(),
+                  unitFee: line.unit_fee.toString(),
                   eventId: line.event_id,
                   eventDateId: line.event_date_id,
                   seatIds: line.seat_ids,

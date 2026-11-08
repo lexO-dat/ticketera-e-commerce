@@ -12,6 +12,7 @@ import {
 } from "./events/service.js";
 import type { SellableItemCatalog } from "./items/registry.js";
 import type { MediaService } from "./media/service.js";
+import type { MetricsService } from "./metrics/service.js";
 import { PRODUCT_STATUSES, type ProductService } from "./products/service.js";
 import { type Actor, clpInput } from "./shared.js";
 import type { VenueService } from "./venues/service.js";
@@ -23,6 +24,7 @@ export interface RouteDependencies {
   products: ProductService;
   media: MediaService;
   items: SellableItemCatalog;
+  metrics: MetricsService;
   guards: AuthGuards;
   /** Segundos de caché HTTP en lecturas públicas (navegador / Nginx). */
   publicMaxAgeSeconds: number;
@@ -52,6 +54,8 @@ const schemas = {
       .optional(),
   }),
   slug: z.object({ slug: z.string().regex(/^[a-z0-9-]{1,80}$/) }),
+  newsletter: z.strictObject({ email: z.email().max(254) }),
+  metrics: z.object({ days: z.coerce.number().int().min(1).max(366).default(30) }),
   listProducts: z.object({ eventId: z.guid().optional() }),
   resolveItems: z.strictObject({
     items: z
@@ -238,6 +242,25 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDependencies): v
   const organizers = { preHandler: guards.required("admin", "organizer") };
   const sellers = { preHandler: guards.required("admin", "seller") };
   const admins = { preHandler: guards.required("admin") };
+
+  // Métricas del embudo y newsletter (antes en Supabase). Públicos y con rate limit en el gateway.
+  app.post("/v1/events/:id/views", async (request, reply) => {
+    const params = parseInput(id, request.params);
+    await deps.metrics.recordView(params.id);
+    return reply.status(202).send();
+  });
+
+  app.post("/v1/newsletter", async (request, reply) => {
+    const body = parseInput(schemas.newsletter, request.body);
+    await deps.metrics.subscribe(body.email);
+    // Misma respuesta si ya estaba suscrito: no revela qué correos existen.
+    return reply.status(202).send();
+  });
+
+  app.get("/v1/admin/metrics", organizers, async (request) => {
+    const query = parseInput(schemas.metrics, request.query);
+    return deps.metrics.summary(actor(request), query.days);
+  });
 
   app.addHook("onSend", async (request, reply) => {
     if (request.url.startsWith("/v1/admin/")) reply.header("cache-control", "no-store");
