@@ -13,6 +13,7 @@ from .consumer import Deduper, EmailConsumer
 from .handlers import BINDINGS, Context, build_email
 from .logs import setup_logging
 from .mailer import Email, SmtpMailer
+from .redis_conn import connect_redis
 from .tickets_client import TicketsClient
 
 
@@ -46,7 +47,7 @@ def health_app(consumer: EmailConsumer, redis: Redis) -> web.Application:
 async def run() -> None:
     settings = Settings()  # type: ignore[call-arg]
     log = setup_logging(settings.service_name, settings.log_level)
-    redis = Redis.from_url(settings.redis_url)
+    redis = connect_redis(settings.redis_url)
     tickets = TicketsClient(settings)
     context = Context(settings=settings, fetch_tickets=tickets.fetch)
 

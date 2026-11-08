@@ -1,4 +1,5 @@
 import pg from "pg";
+import { parse as parseConnectionString } from "pg-connection-string";
 import type { Logger } from "pino";
 import { retry } from "../retry.js";
 
@@ -19,13 +20,110 @@ export interface CreatePoolOptions {
   logger?: Logger;
 }
 
+/**
+ * Nodos candidatos a primaria (ADR-01). `DATABASE_URL` puede traer respaldos en
+ * `?failover_hosts=host:puerto,…` (como `target_session_attrs=read-write` de libpq): cada conexión
+ * nueva verifica que el nodo acepte escrituras; si no responde, es una réplica o está aislado
+ * (`default_transaction_read_only`), se pasa al siguiente. Así, tras promover la réplica, los
+ * servicios la encuentran solos y nunca escriben en una primaria vieja que reaparece.
+ */
+export function parseFailoverHosts(connectionString: string): {
+  connectionString: string;
+  hosts: { host: string; port: number }[];
+} {
+  const url = new URL(connectionString);
+  const extra = url.searchParams.get("failover_hosts");
+  url.searchParams.delete("failover_hosts");
+  const hosts = [{ host: url.hostname, port: Number(url.port || 5432) }];
+  for (const entry of (extra ?? "").split(",").filter(Boolean)) {
+    const [host, port] = entry.trim().split(":");
+    hosts.push({ host: host!, port: Number(port || 5432) });
+  }
+  return { connectionString: url.toString(), hosts };
+}
+
+/** Cuánto se salta un nodo que no aceptó la conexión (dura más que un failover). */
+const DOWN_FOR_MS = 10_000;
+
+/** `pg.Client` que solo se queda conectado a un nodo que acepta escrituras. */
+function failoverClient(hosts: { host: string; port: number }[], logger?: Logger) {
+  let current = 0;
+  /** Un nodo que no respondió se salta por un rato: no se vuelve a pagar su timeout. */
+  const downUntil = new Array<number>(hosts.length).fill(0);
+  const rotate = (from: number, reason: string, unreachable = false) => {
+    if (unreachable) downUntil[from] = Date.now() + DOWN_FOR_MS;
+    if (current !== from) return;
+    // Siguiente nodo no marcado como caído (si todos lo están, el siguiente igual).
+    let next = (from + 1) % hosts.length;
+    for (let i = 0; i < hosts.length - 1 && downUntil[next]! > Date.now(); i++) {
+      next = (next + 1) % hosts.length;
+    }
+    current = next;
+    logger?.warn(
+      { from: hosts[from], to: hosts[current], reason },
+      "postgres: se busca la primaria en otro nodo",
+    );
+  };
+  return class FailoverClient extends pg.Client {
+    private readonly target: number;
+    constructor(config?: pg.ClientConfig) {
+      const target = current;
+      // pg re-parsea `connectionString` y pisaría el host: se pasan los campos ya parseados.
+      const { connectionString, ...rest } = config ?? {};
+      const parsed = connectionString ? parseConnectionString(connectionString) : {};
+      super({
+        ...(parsed as pg.ClientConfig),
+        ...rest,
+        host: hosts[target]!.host,
+        port: hosts[target]!.port,
+      });
+      this.target = target;
+    }
+
+    // @ts-expect-error: misma firma que pg.Client.connect (callback o promesa).
+    override connect(callback?: (error?: Error) => void): Promise<void> | undefined {
+      const done = (async () => {
+        try {
+          await super.connect();
+        } catch (error) {
+          rotate(this.target, "sin conexión", true);
+          throw error;
+        }
+        const role = await super.query<{ standby: boolean; read_only: string }>(
+          "select pg_is_in_recovery() as standby, current_setting('default_transaction_read_only') as read_only",
+        );
+        const row = role.rows[0]!;
+        if (row.standby || row.read_only === "on") {
+          rotate(this.target, row.standby ? "es réplica" : "aislado (solo lectura)");
+          await this.end().catch(() => undefined);
+          throw Object.assign(new Error("postgres: el nodo no acepta escrituras"), {
+            code: "57P03", // cannot_connect_now: transitorio
+          });
+        }
+      })();
+      if (!callback) return done;
+      done.then(
+        () => callback(),
+        (error: Error) => callback(error),
+      );
+      return undefined;
+    }
+  };
+}
+
 export function createPool(options: CreatePoolOptions): Pool {
+  const { connectionString, hosts } = parseFailoverHosts(options.connectionString);
   const pool = new pg.Pool({
-    connectionString: options.connectionString,
+    connectionString,
+    ...(hosts.length > 1
+      ? { Client: failoverClient(hosts, options.logger) as unknown as typeof pg.Client }
+      : {}),
     application_name: options.applicationName,
     max: options.max ?? 10,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
+    // Con respaldo, un nodo caído se detecta rápido: dentro de Docker resolver el nombre de un
+    // contenedor muerto tarda ~5 s y conectar a su IP ~3 s.
+    connectionTimeoutMillis: hosts.length > 1 ? 1_500 : 3_000,
     statement_timeout: options.statementTimeoutMs ?? 15_000,
     // Evita transacciones abiertas indefinidamente que retienen bloqueos (ADR-03).
     idle_in_transaction_session_timeout: 30_000,

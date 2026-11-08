@@ -11,16 +11,48 @@ export interface CreateRedisOptions {
   options?: RedisOptions;
 }
 
+/**
+ * Opciones de conexión a partir de la URL. Con `?sentinels=host:puerto,…&master=nombre` (ADR-01)
+ * el cliente pregunta a los Sentinel quién es el primario y, tras un failover, se reconecta al
+ * nuevo; sin esos parámetros es una conexión directa.
+ */
+export function redisConnectionOptions(url: string): RedisOptions {
+  const parsed = new URL(url);
+  const sentinels = parsed.searchParams.get("sentinels");
+  const password = parsed.password ? decodeURIComponent(parsed.password) : undefined;
+  if (!sentinels) return {};
+  return {
+    sentinels: sentinels.split(",").map((entry) => {
+      const [host, port] = entry.trim().split(":");
+      return { host: host!, port: Number(port || 26379) };
+    }),
+    name: parsed.searchParams.get("master") ?? "ticketera",
+    ...(password ? { password } : {}),
+    ...(parsed.username ? { username: decodeURIComponent(parsed.username) } : {}),
+    db: Number(parsed.pathname.slice(1) || 0),
+    // Comprueba con los Sentinel que el nodo sigue siendo primario al reconectar.
+    role: "master",
+    failoverDetector: true,
+    sentinelRetryStrategy: (times) => Math.min(times * 200, 2_000),
+  };
+}
+
 export function createRedis({ url, connectionName, logger, options }: CreateRedisOptions): Redis {
-  const redis = new Redis(url, {
+  const sentinel = redisConnectionOptions(url);
+  const base: RedisOptions = {
     connectionName,
     // Falla rápido si Redis no responde en vez de encolar comandos sin límite.
     maxRetriesPerRequest: 2,
     enableOfflineQueue: true,
-    connectTimeout: 5_000,
-    retryStrategy: (times) => Math.min(times * 200, 5_000),
+    connectTimeout: 1_000,
+    // Un comando sin respuesta (primario caído, failover en curso) falla en vez de colgar la
+    // solicitud: el gateway, por ejemplo, deja pasar el rate limit si Redis no responde.
+    commandTimeout: 1_000,
+    // Reintento rápido: tras un failover el primario nuevo está listo en segundos.
+    retryStrategy: (times) => Math.min(times * 100, 2_000),
     ...options,
-  });
+  };
+  const redis = sentinel.sentinels ? new Redis({ ...base, ...sentinel }) : new Redis(url, base);
   redis.on("error", (error) => logger?.warn({ err: error }, "redis: error"));
   return redis;
 }

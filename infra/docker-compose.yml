@@ -5,6 +5,8 @@
 # Las credenciales por defecto son solo de desarrollo; se sobrescriben con infra/.env.
 name: ticketera
 
+# Los servicios llegan a Postgres por IP fija (172.28.0.20 / .21, ADR-10): resolver el nombre de un
+# nodo caído tarda ~5 s en el DNS de Docker y satura el pool de hilos de Node.
 x-postgres-env: &postgres-env
   POSTGRES_USER: postgres
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-dev-password}
@@ -13,6 +15,9 @@ x-postgres-env: &postgres-env
 services:
   postgres-primary:
     image: postgres:17-alpine
+    networks:
+      default:
+        ipv4_address: 172.28.0.20
     environment:
       <<: *postgres-env
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --data-checksums
@@ -47,6 +52,9 @@ services:
 
   postgres-replica:
     image: postgres:17-alpine
+    networks:
+      default:
+        ipv4_address: 172.28.0.21
     user: postgres
     environment:
       <<: *postgres-env
@@ -72,6 +80,11 @@ services:
 
   redis-primary:
     image: redis:8-alpine
+    # IP fija: Sentinel vigila por IP. Resolver el nombre de un contenedor caído bloquea a Sentinel
+    # varios segundos y lo deja en modo TILT, sin failover.
+    networks:
+      default:
+        ipv4_address: 172.28.0.10
     command:
       - redis-server
       - --requirepass
@@ -96,6 +109,9 @@ services:
 
   redis-replica:
     image: redis:8-alpine
+    networks:
+      default:
+        ipv4_address: 172.28.0.11
     command:
       - redis-server
       - --replicaof
@@ -115,14 +131,63 @@ services:
       redis-primary:
         condition: service_healthy
     healthcheck:
-      test:
-        - CMD-SHELL
-        - redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning info replication | grep -q 'master_link_status:up'
+      # Tras un failover esta réplica puede ser el primario: basta con que responda.
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG']
       interval: 2s
       timeout: 3s
       retries: 30
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-dev-password}
+
+  # Sentinel: tres votantes, quórum 2. Detectan la caída del primario en 1 s y promueven la réplica.
+  redis-sentinel-1: &redis-sentinel
+    image: redis:8-alpine
+    entrypoint: ["sh", "/sentinel-entrypoint.sh"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-dev-password}
+      MASTER_HOST: 172.28.0.10
+      REDIS_NODES: 172.28.0.10 172.28.0.11
+    volumes:
+      - ./redis/sentinel-entrypoint.sh:/sentinel-entrypoint.sh:ro
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -p 26379 sentinel get-master-addr-by-name ticketera | grep -q ."]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis-sentinel-2:
+    <<: *redis-sentinel
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-dev-password}
+      MASTER_HOST: 172.28.0.10
+      REDIS_NODES: 172.28.0.10 172.28.0.11
+
+  redis-sentinel-3:
+    <<: *redis-sentinel
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-dev-password}
+      MASTER_HOST: 172.28.0.10
+      REDIS_NODES: 172.28.0.10 172.28.0.11
+
+  # Failover de PostgreSQL (ADR-01): promueve la réplica si la primaria cae y aísla a la vieja.
+  pg-failover:
+    build:
+      context: ./pg-failover
+    init: true
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres-dev-password}
+      NODES: postgres-primary=172.28.0.20:5432,postgres-replica=172.28.0.21:5432
+      CHECK_INTERVAL_MS: "500"
+      FAILURE_THRESHOLD: "3"
+      SYNC_STANDBY_NAMES: ${PG_SYNC_STANDBY_NAMES-ANY 1 (replica1)}
+    volumes:
+      - pg-failover:/state
+    depends_on:
+      postgres-replica:
+        condition: service_healthy
 
   rabbitmq:
     image: rabbitmq:4-management-alpine
@@ -185,7 +250,7 @@ services:
       SERVICE_NAME: identity
       PORT: "3000"
       LOG_LEVEL: info
-      DATABASE_URL: postgres://identity:${PG_PASSWORD_IDENTITY:-identity-dev-password}@postgres-primary:5432/identity
+      DATABASE_URL: postgres://identity:${PG_PASSWORD_IDENTITY:-identity-dev-password}@172.28.0.20:5432/identity?failover_hosts=172.28.0.21:5432
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
       KEY_ENCRYPTION_SECRET: ${IDENTITY_KEY_ENCRYPTION_SECRET:-ZGV2LW9ubHkta2V5LWVuY3J5cHRpb24tc2VjcmV0ISE=}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-https://localhost:8443}
@@ -211,8 +276,8 @@ services:
       SERVICE_NAME: catalog
       PORT: "3000"
       LOG_LEVEL: info
-      DATABASE_URL: postgres://catalog:${PG_PASSWORD_CATALOG:-catalog-dev-password}@postgres-primary:5432/catalog
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      DATABASE_URL: postgres://catalog:${PG_PASSWORD_CATALOG:-catalog-dev-password}@172.28.0.20:5432/catalog?failover_hosts=172.28.0.21:5432
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379?sentinels=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379&master=ticketera
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
       JWKS_URL: http://identity:3000/.well-known/jwks.json
       CACHE_TTL_SECONDS: "30"
@@ -241,7 +306,7 @@ services:
       SERVICE_NAME: queue
       PORT: "3000"
       LOG_LEVEL: info
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379?sentinels=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379&master=ticketera
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
       JWKS_URL: http://identity:3000/.well-known/jwks.json
       CATALOG_URL: http://catalog:3000
@@ -266,9 +331,9 @@ services:
       SERVICE_NAME: inventory
       PORT: "3000"
       LOG_LEVEL: info
-      DATABASE_URL: postgres://inventory:${PG_PASSWORD_INVENTORY:-inventory-dev-password}@postgres-primary:5432/inventory
+      DATABASE_URL: postgres://inventory:${PG_PASSWORD_INVENTORY:-inventory-dev-password}@172.28.0.20:5432/inventory?failover_hosts=172.28.0.21:5432
       DB_POOL_MAX: "20"
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379?sentinels=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379&master=ticketera
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
       JWKS_URL: http://identity:3000/.well-known/jwks.json
       QUEUE_JWKS_URL: http://queue:3000/.well-known/jwks.json
@@ -296,7 +361,7 @@ services:
       SERVICE_NAME: webpay-mock
       PORT: "3000"
       LOG_LEVEL: info
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379?sentinels=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379&master=ticketera
       WEBPAY_API_KEY_ID: ${WEBPAY_API_KEY_ID:-597055555532}
       WEBPAY_API_KEY_SECRET: ${WEBPAY_API_KEY_SECRET:-webpay-mock-dev-secret-0123456789}
       WEBPAY_FORM_URL: ${PUBLIC_WEB_URL:-https://localhost:8443}/webpay/form
@@ -322,8 +387,8 @@ services:
       SERVICE_NAME: payments
       PORT: "3000"
       LOG_LEVEL: info
-      DATABASE_URL: postgres://payments:${PG_PASSWORD_PAYMENTS:-payments-dev-password}@postgres-primary:5432/payments
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      DATABASE_URL: postgres://payments:${PG_PASSWORD_PAYMENTS:-payments-dev-password}@172.28.0.20:5432/payments?failover_hosts=172.28.0.21:5432
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379?sentinels=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379&master=ticketera
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
       JWKS_URL: http://identity:3000/.well-known/jwks.json
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-dev-token-change-me-0123456789}
@@ -352,8 +417,8 @@ services:
       SERVICE_NAME: orders
       PORT: "3000"
       LOG_LEVEL: info
-      DATABASE_URL: postgres://orders:${PG_PASSWORD_ORDERS:-orders-dev-password}@postgres-primary:5432/orders
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      DATABASE_URL: postgres://orders:${PG_PASSWORD_ORDERS:-orders-dev-password}@172.28.0.20:5432/orders?failover_hosts=172.28.0.21:5432
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379?sentinels=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379&master=ticketera
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
       JWKS_URL: http://identity:3000/.well-known/jwks.json
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-dev-token-change-me-0123456789}
@@ -385,7 +450,7 @@ services:
       SERVICE_NAME: tickets
       PORT: "3000"
       LOG_LEVEL: info
-      DATABASE_URL: postgres://tickets:${PG_PASSWORD_TICKETS:-tickets-dev-password}@postgres-primary:5432/tickets
+      DATABASE_URL: postgres://tickets:${PG_PASSWORD_TICKETS:-tickets-dev-password}@172.28.0.20:5432/tickets?failover_hosts=172.28.0.21:5432
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
       JWKS_URL: http://identity:3000/.well-known/jwks.json
       CATALOG_URL: http://catalog:3000
@@ -410,7 +475,7 @@ services:
       PORT: "3000"
       LOG_LEVEL: info
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379?sentinels=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379&master=ticketera
       TICKETS_URL: http://tickets:3000
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-dev-token-change-me-0123456789}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-https://localhost:8443}
@@ -435,11 +500,14 @@ services:
       context: ..
       dockerfile: services/gateway/Dockerfile
     init: true
+    # Dos réplicas tras Nginx (ADR-01): si una cae, Nginx reintenta la conexión en la otra.
+    deploy:
+      replicas: 2
     environment:
       SERVICE_NAME: gateway
       PORT: "3000"
       LOG_LEVEL: info
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379?sentinels=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379&master=ticketera
       # El DNS de Docker reparte entre las réplicas de identity.
       IDENTITY_URLS: http://identity:3000
       CATALOG_URLS: http://catalog:3000
@@ -450,8 +518,9 @@ services:
       TICKETS_URLS: http://tickets:3000
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost:8443}
     ports:
-      # La web (BFF) en desarrollo llama al gateway directo; el navegador entra por Nginx.
-      - "127.0.0.1:3000:3000"
+      # La web (BFF) en desarrollo llama al gateway directo (réplica 1 en :3000, réplica 2 en :3001);
+      # el navegador entra por Nginx, que reparte entre ambas.
+      - "127.0.0.1:3000-3001:3000"
     depends_on:
       redis-primary:
         condition: service_healthy
@@ -481,8 +550,8 @@ services:
       SERVICE_NAME: template
       PORT: "3000"
       LOG_LEVEL: info
-      DATABASE_URL: postgres://template:${PG_PASSWORD_TEMPLATE:-template-dev-password}@postgres-primary:5432/template
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      DATABASE_URL: postgres://template:${PG_PASSWORD_TEMPLATE:-template-dev-password}@172.28.0.20:5432/template?failover_hosts=172.28.0.21:5432
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379?sentinels=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379&master=ticketera
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
     ports:
       - "127.0.0.1:3900:3000"
@@ -494,7 +563,17 @@ services:
       rabbitmq:
         condition: service_healthy
 
+# Red con un tramo de IPs fijas (172.28.0.x) para los nodos que Sentinel vigila; el resto de los
+# contenedores toma IPs de 172.28.1.0/24.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          ip_range: 172.28.1.0/24
+
 volumes:
+  pg-failover:
   postgres-primary:
   postgres-replica:
   redis-primary:

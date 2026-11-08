@@ -205,3 +205,32 @@ describe("ItemVendible", () => {
     expect(() => registry.register("gift_card", () => item)).toThrow();
   });
 });
+
+describe("conexiones con failover (ADR-01)", () => {
+  it("Redis por Sentinel: lista de sentinels, nombre del primario y contraseña", async () => {
+    const { redisConnectionOptions } = await import("../src/redis/index.js");
+    expect(redisConnectionOptions("redis://:s3cr%40to@redis-primary:6379")).toEqual({});
+    const options = redisConnectionOptions(
+      "redis://:s3cr%40to@redis-primary:6379/2?sentinels=s1:26379,s2&master=ticketera",
+    );
+    expect(options.sentinels).toEqual([
+      { host: "s1", port: 26379 },
+      { host: "s2", port: 26379 },
+    ]);
+    expect(options).toMatchObject({ name: "ticketera", password: "s3cr@to", db: 2 });
+  });
+
+  it("PostgreSQL: nodos de respaldo fuera de la URL que recibe pg", async () => {
+    const { parseFailoverHosts } = await import("../src/db/index.js");
+    const parsed = parseFailoverHosts(
+      "postgres://u:p@pg-a:5432/db?options=-c%20x%3D1&failover_hosts=pg-b:5433,pg-c",
+    );
+    expect(parsed.hosts).toEqual([
+      { host: "pg-a", port: 5432 },
+      { host: "pg-b", port: 5433 },
+      { host: "pg-c", port: 5432 },
+    ]);
+    expect(parsed.connectionString).not.toContain("failover_hosts");
+    expect(parsed.connectionString).toContain("options=");
+  });
+});

@@ -92,3 +92,17 @@ def test_variables_vacias_no_activan_autenticacion(monkeypatch):
     assert config.smtp_username is None
     assert config.smtp_password is None
     assert config.mail_reply_to is None
+
+
+def test_redis_por_sentinel():
+    from notifications.redis_conn import sentinel_settings
+
+    assert sentinel_settings("redis://:clave@redis-primary:6379") is None
+    assert sentinel_settings(
+        "redis://:cl%40ve@redis-primary:6379/1?sentinels=s1:26379,s2&master=ticketera"
+    ) == {
+        "sentinels": [("s1", 26379), ("s2", 26379)],
+        "master": "ticketera",
+        "password": "cl@ve",
+        "db": 1,
+    }

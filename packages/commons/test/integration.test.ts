@@ -14,6 +14,7 @@ import {
   createPool,
   enqueueOutbox,
   markProcessed,
+  parseFailoverHosts,
   runMigrations,
   withTransaction,
   type Pool,
@@ -160,6 +161,34 @@ describe.skipIf(!DATABASE_URL)("postgres", () => {
     expect(await markProcessed(pool, "tickets", eventId)).toBe(true);
     expect(await markProcessed(pool, "tickets", eventId)).toBe(false);
     expect(await markProcessed(pool, "notifications", eventId)).toBe(true);
+  });
+
+  it("failover: si el nodo no responde o es réplica, la siguiente conexión va al que acepta escrituras", async () => {
+    const real = new URL(DATABASE_URL!);
+    const replica = process.env.TEST_REPLICA_HOST; // p. ej. 127.0.0.1:5433 (réplica del compose)
+    const dead = new URL(DATABASE_URL!);
+    dead.hostname = "127.0.0.1";
+    dead.port = "1"; // nada escucha ahí
+    const fallbacks = [...(replica ? [replica] : []), `${real.hostname}:${real.port || 5432}`];
+    dead.searchParams.set("failover_hosts", fallbacks.join(","));
+    expect(parseFailoverHosts(dead.toString()).hosts).toHaveLength(fallbacks.length + 1);
+
+    const failover = createPool({
+      connectionString: dead.toString(),
+      applicationName: "commons-failover-test",
+      max: 1,
+    });
+    const outcomes: string[] = [];
+    for (let attempt = 0; attempt < fallbacks.length + 2; attempt++) {
+      const result = await failover
+        .query("select pg_is_in_recovery() as standby")
+        .catch((e: Error) => e);
+      outcomes.push(result instanceof Error ? "error" : String(result.rows[0].standby));
+    }
+    await failover.end();
+    // Primero el nodo caído (y la réplica, si hay): fallan rápido; luego se queda en la primaria.
+    expect(outcomes.slice(0, fallbacks.length)).toEqual(Array(fallbacks.length).fill("error"));
+    expect(outcomes.slice(fallbacks.length)).toEqual(["false", "false"]);
   });
 
   it("bigint de Postgres llega como BigInt (montos CLP)", async () => {
