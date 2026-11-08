@@ -194,7 +194,7 @@ operations:
       $ref: "#/channels/OrdenConfirmada"
   publishOrdenCancelada:
     action: send
-    summary: "Publicado por `orders`."
+    summary: "Publicado por `orders`; lo consumen `tickets`, `notifications`."
     channel:
       $ref: "#/channels/OrdenCancelada"
   publishPagoAutorizado:
@@ -499,6 +499,13 @@ components:
                   orderId: { type: string, format: uuid }
                   reason: { type: string }
                   userId: { type: string, format: uuid }
+                  orderCode: { type: string }
+                  buyerName: { type: string }
+                  buyerEmail:
+                    type: string
+                    format: email
+                    description: "notifications avisa del rechazo, vencimiento o reembolso a este correo"
+                  total: { type: string, description: "CLP en entero (string)" }
     PagoAutorizado:
       name: PagoAutorizado
       title: "PagoAutorizado v1"

@@ -1,0 +1,10 @@
+¡Compra confirmada!
+
+Hola {{ name }}, tu pago fue aprobado. Orden {{ order_code }}.
+
+{% for line in lines %}- {{ line.name }} × {{ line.quantity }}{% if line.details %} ({{ line.details }}){% endif %}
+{% endfor %}
+Total: {{ total }}
+
+Tus entradas con código QR llegan en un correo aparte en unos segundos.
+Ver tu orden: {{ order_url }}

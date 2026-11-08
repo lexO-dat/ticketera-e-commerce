@@ -1,0 +1,50 @@
+[project]
+name = "ticketera-notifications"
+version = "0.1.0"
+description = "Consume eventos de dominio y envía los correos de la plataforma por SMTP (Mailpit en desarrollo)"
+requires-python = ">=3.12"
+dependencies = [
+  "aio-pika>=9.4,<10",
+  "aiohttp>=3.10,<4",
+  "aiosmtplib>=3.0,<5",
+  "jinja2>=3.1,<4",
+  "pydantic>=2.8,<3",
+  "pydantic-settings>=2.4,<3",
+  "redis>=5.0,<7",
+  "segno>=1.6,<2",
+  # Zonas horarias (hora de Chile) aunque la imagen no traiga /usr/share/zoneinfo.
+  "tzdata>=2024.1",
+]
+
+[dependency-groups]
+dev = [
+  "aiosmtpd>=1.4",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/notifications"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "RUF"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]

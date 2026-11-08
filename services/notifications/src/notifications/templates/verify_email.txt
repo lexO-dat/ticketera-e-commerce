@@ -1,0 +1,8 @@
+Confirma tu correo
+
+Hola{% if name %} {{ name }}{% endif %}, gracias por crear tu cuenta en Ticketera. Confirma que este
+correo es tuyo para comprar y recibir tus entradas:
+
+{{ url }}
+
+El enlace vence en 24 horas y sirve una sola vez. Si no creaste esta cuenta, ignora este correo.

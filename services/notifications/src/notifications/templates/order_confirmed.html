@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="font-size:24px;margin:0 0 12px;">¡Compra confirmada!</h1>
+<p>Hola {{ name }}, tu pago fue aprobado. Orden <strong>{{ order_code }}</strong>.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;border-top:1px solid #ddd8cf;">
+  {% for line in lines %}
+  <tr>
+    <td style="padding:12px 0;border-bottom:1px solid #ddd8cf;">
+      <strong>{{ line.name }}</strong> × {{ line.quantity }}
+      {% if line.details %}<br /><span style="font-size:14px;color:#6b6b66;">{{ line.details }}</span>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+<p style="font-size:18px;">Total: <strong>{{ total }}</strong></p>
+<p>Tus entradas con código QR llegan en un correo aparte en unos segundos.</p>
+{% with url=order_url, label="Ver mi orden" %}{% include "_button.html" %}{% endwith %}
+{% endblock %}

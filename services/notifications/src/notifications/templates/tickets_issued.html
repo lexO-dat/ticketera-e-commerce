@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="font-size:24px;margin:0 0 12px;">Tus entradas</h1>
+<p>Hola {{ name }}, aquí están tus entradas de la orden <strong>{{ order_code }}</strong>. Presenta cada QR en el acceso: sirve para un solo ingreso.</p>
+{% for ticket in tickets %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;background:#f4f1ec;border-radius:12px;">
+  <tr>
+    <td style="padding:16px;" width="180">
+      {% if ticket.cid %}<img src="cid:{{ ticket.cid }}" width="160" height="160" alt="QR de la entrada {{ ticket.code }}" style="display:block;background:#ffffff;" />{% endif %}
+    </td>
+    <td style="padding:16px 16px 16px 0;vertical-align:top;font-size:15px;">
+      <strong>{{ ticket.name }}</strong><br />
+      {% if ticket.when %}{{ ticket.when }}<br />{% endif %}
+      {% if ticket.venue %}{{ ticket.venue }}<br />{% endif %}
+      {% if ticket.seat %}{{ ticket.seat }}<br />{% endif %}
+      <span style="font-family:monospace;letter-spacing:0.08em;">{{ ticket.code }}</span>
+    </td>
+  </tr>
+</table>
+{% endfor %}
+<p style="font-size:14px;color:#6b6b66;">Si el QR no se puede leer, el personal puede validar el código impreso. También las tienes siempre en la web.</p>
+{% with url=order_url, label="Ver mis entradas" %}{% include "_button.html" %}{% endwith %}
+{% endblock %}

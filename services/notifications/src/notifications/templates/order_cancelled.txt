@@ -1,0 +1,6 @@
+{{ title }}
+
+Hola {{ name }}, {{ message }}
+
+Orden {{ order_code }}{% if total %} · {{ total }}{% endif %}
+Ver tu orden: {{ order_url }}

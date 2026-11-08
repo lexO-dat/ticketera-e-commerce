@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="font-size:24px;margin:0 0 12px;">{{ title }}</h1>
+<p>Hola {{ name }}, {{ message }}</p>
+<p style="font-size:14px;color:#6b6b66;">Orden {{ order_code }}{% if total %} · {{ total }}{% endif %}</p>
+{% with url=order_url, label="Ver mi orden" %}{% include "_button.html" %}{% endwith %}
+{% endblock %}

@@ -1,0 +1,8 @@
+Tus entradas
+
+Hola {{ name }}, aquí están tus entradas de la orden {{ order_code }}. El QR de cada una está en la
+versión HTML de este correo y en la web; el personal también puede validar el código.
+
+{% for ticket in tickets %}- {{ ticket.name }}{% if ticket.when %} · {{ ticket.when }}{% endif %}{% if ticket.seat %} · {{ ticket.seat }}{% endif %} · código {{ ticket.code }}
+{% endfor %}
+Ver tus entradas: {{ order_url }}

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="font-size:24px;margin:0 0 12px;">Confirma tu correo</h1>
+<p>Hola{% if name %} {{ name }}{% endif %}, gracias por crear tu cuenta. Confirma que este correo es tuyo para comprar y recibir tus entradas.</p>
+{% with url=url, label="Confirmar mi correo" %}{% include "_button.html" %}{% endwith %}
+<p style="font-size:14px;color:#6b6b66;">El enlace vence en 24 horas y sirve una sola vez.</p>
+{% endblock %}
