@@ -29,6 +29,25 @@ npm run test:failover -- --scenario postgres,redis      # algunos
 | `redis`            | Redis primario          | Sentinel promueve la réplica; ioredis se reconecta al nuevo primario |
 | `postgres`         | PostgreSQL primaria     | `pg-failover` promueve la réplica; el pool de commons la encuentra   |
 
+## Resultados de referencia (portátil, todo en Docker)
+
+Ventana = desde el inicio de la primera solicitud fallida o lenta (> 1 s) hasta el fin de la
+última, es decir, lo que percibe el usuario:
+
+| Escenario                              | Peor ventana | Solicitudes fallidas                                          |
+| -------------------------------------- | ------------ | ------------------------------------------------------------- |
+| Réplica de catalog / identity / orders | 0 s          | 0                                                             |
+| Réplica del gateway                    | ≤ 3,3 s      | 0 (Nginx espera 1 s la conexión y reintenta en la otra)       |
+| Redis primario                         | ≤ 2,6 s      | 1 lectura del carro (500); el carro se conserva               |
+| PostgreSQL primaria                    | ≤ 1,5 s      | 0–1 (el monitor confirma con la réplica y promueve en ~0,3 s) |
+| Réplica de PostgreSQL                  | ≤ 3,1 s      | 0 (las escrituras esperan hasta que se pasa a asíncrona)      |
+
+Lo que hubo que resolver para llegar ahí (ADR-10): dentro de Docker, resolver el nombre de un
+contenedor caído tarda ~5 s y conectar a su IP vieja ~3 s. Con varias resoluciones colgadas se
+satura el pool de hilos de Node, y Sentinel entraba en modo TILT. Por eso los nodos con estado
+usan IP fijas y los clientes tienen timeouts cortos (conexión a Postgres 1,5 s, comandos de Redis
+1 s).
+
 Después de cada escenario el componente vuelve: `docker compose up -d`, o en Postgres
 `npm run infra:pg-rejoin`, que lo suma como réplica de la nueva primaria. Diseño en
 [ADR-10](../../docs/adr/ADR-10-failover-postgres-redis.md).

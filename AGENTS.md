@@ -181,14 +181,15 @@ docs/
   architecture/  adr/  services/
 ```
 
-Estado (Fases 1 a 7 completas): existen `packages/commons`, `packages/contracts`, `infra/`,
+Estado (Fases 1 a 8 completas): existen `packages/commons`, `packages/contracts`, `infra/`,
 `services/template`, `services/identity`, `services/gateway`, `services/catalog`,
 `services/queue`, `services/inventory`, `services/orders`, `services/payments`,
 `services/webpay-mock`, `services/tickets`, `services/notifications` (Python), `apps/scanner` y
-`tools/queue-simulator`; la web
+`tools/queue-simulator` y `tools/failover-test`; la web
 compra de punta a punta vía gateway (sesión BFF, catálogo, fila, reservas, carro, checkout, pago en
 Webpay simulado y entradas con QR), el personal valida en puerta con `apps/scanner` y los correos
-salen por SMTP (Mailpit en desarrollo). Pendiente (Fase 8): las métricas del panel aún en Supabase. Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
+salen por SMTP (Mailpit en desarrollo). Supabase ya no se usa: la web habla solo con el gateway.
+PostgreSQL y Redis tienen failover automático (ADR-10). Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
 Comandos y servicios locales: [`README.md`](README.md).
 
 Mientras dure la migración, la app actual sigue en `src/`. Se migra con patrón **strangler**: cada

@@ -78,5 +78,13 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 
 ## Fase 8 — Corte final
 
-- [ ] La web usa solo el gateway; eliminar `@supabase/supabase-js` y `supabase/`
-- [ ] Pruebas de carga (10.000 usuarios) y de failover (≤ 5 s)
+- [x] La web usa solo el gateway; eliminados `@supabase/supabase-js`, `src/integrations/supabase` y `supabase/`
+- [x] Embudo de ventas y newsletter en `catalog` (vistas en lote desde Redis; reservas, checkouts y compras por eventos)
+- [x] Prueba de carga: 10.000 usuarios concurrentes en la fila, 0 errores, 0 sobreventas, ledger balanceado
+- [x] Failover automático (ADR-10): monitor propio de PostgreSQL con aislamiento de la primaria vieja,
+      Redis Sentinel, gateway ×2 tras Nginx; `npm run test:failover` mide ≤ 5 s en todos los escenarios
+- [x] Encontrado al medir: una entrada sin reserva se podía comprar (ahora `requiresReservation` del
+      `ItemVendible`), una orden solo de productos no se confirmaba y un rechazo definitivo de inventory
+      dejaba el cobro retenido (ahora se reembolsa)
+- [ ] Pendiente fuera del alcance local: RabbitMQ en clúster, monitor de failover redundante, prueba de
+      carga distribuida en infraestructura dedicada

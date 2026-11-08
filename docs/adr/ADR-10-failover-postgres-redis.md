@@ -22,9 +22,9 @@ Las herramientas habituales no cumplen el plazo o agregan un sistema más que op
 
 **PostgreSQL**
 
-- Monitor propio `pg-failover` (`infra/pg-failover`): sondea los nodos cada 1 s; tras 2 fallas
-  seguidas de la primaria promueve la réplica (`pg_promote`) y la deja en replicación asíncrona
-  hasta que tenga un standby.
+- Monitor propio `pg-failover` (`infra/pg-failover`): sondea los nodos cada 500 ms; cuando la
+  primaria no responde y la réplica confirma que perdió el stream de WAL, promueve la réplica
+  (`pg_promote`) y la deja en replicación asíncrona hasta que tenga un standby.
 - **Aislamiento (fencing):** si la primaria vieja reaparece aceptando escrituras, el monitor le fija
   `default_transaction_read_only = on` y corta sus conexiones.
 - **Sin proxy en la ruta de datos:** el pool de `@shared/commons` recibe los nodos de respaldo en la
@@ -38,7 +38,7 @@ Las herramientas habituales no cumplen el plazo o agregan un sistema más que op
 
 **Redis**
 
-- Tres Redis Sentinel (quórum 2, `down-after-milliseconds 1500`). Los clientes (ioredis en Node,
+- Tres Redis Sentinel (quórum 2, `down-after-milliseconds 1000`). Los clientes (ioredis en Node,
   redis-py en notifications) preguntan a los Sentinel quién es el primario
   (`?sentinels=…&master=ticketera` en `REDIS_URL`) y se reconectan solos tras un failover. El
   primario viejo vuelve como réplica sin intervención.
@@ -47,6 +47,13 @@ Las herramientas habituales no cumplen el plazo o agregan un sistema más que op
 
 - El gateway corre en dos réplicas. Nginx resuelve el DNS cada 2 s y, si una réplica no acepta la
   conexión, reintenta en otra (`proxy_next_upstream`, conexión en 1 s).
+
+**Medido** (`npm run test:failover`, ver `tools/failover-test/README.md`): primaria de
+PostgreSQL ≤ 1,5 s, Redis ≤ 2,6 s, réplica del gateway ≤ 3,3 s y réplica de un servicio 0 s, sin
+perder la sesión ni el carro. Para lograrlo, los nodos con estado usan **IP fijas** (resolver el
+nombre de un contenedor caído tarda ~5 s en el DNS de Docker, satura el pool de hilos de Node y
+deja a Sentinel en modo TILT). El monitor promueve con una sola sonda fallida si la réplica
+confirma que perdió el stream de WAL; si no, exige 3 fallas seguidas.
 
 ## Consecuencias
 

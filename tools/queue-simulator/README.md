@@ -36,6 +36,24 @@ Las cuentas creadas se guardan en `.data/users.json` (ignorado por git) para reu
 
 ## Resultados de referencia (portátil, todo en Docker)
 
+**10.000 usuarios (Fase 8, ASR02)**: 10.000 bots con la sesión ya abierta, 200 cupos, llegada a la
+fila en 120 s, todo en un portátil (12 CPU, 8 GB para Docker):
+
+| Métrica                        | Valor                                                             |
+| ------------------------------ | ----------------------------------------------------------------- |
+| En la fila / admitidos         | 10.000 / 9.518 (482 abandonaron a propósito)                      |
+| Máx. admitidos activos         | 200 / 200 · máx. 6.527 esperando a la vez                         |
+| Errores (timeouts, 5xx)        | 0                                                                 |
+| Órdenes                        | 1.265 confirmadas · 303 canceladas (@rejectme); resto sin butacas |
+| Auditoría de inventory, ledger | OK, OK · ninguna butaca en dos órdenes confirmadas                |
+| Latencia p50 / p95             | estado 14 / 88 ms · reserva 20 / 244 ms · checkout 154 / 512 ms   |
+| Retorno → orden resuelta       | p50 621 ms · p95 1.068 ms                                         |
+| Login (antes de abrir)         | p50 334 ms · p95 552 ms (Argon2id; 24 en paralelo)                |
+
+Con los 10.000 logins **durante** la apertura (versión anterior del simulador), la CPU del portátil
+se saturó con Argon2id: login p50 7 s y timeouts del cliente. Por eso los bots inician sesión
+antes, como ocurre en un peak real.
+
 **Con pago (Fase 5)** — 500 bots, 50 cupos, llegada en 20 s:
 
 | Métrica                        | Valor                                                   |
