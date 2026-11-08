@@ -42,6 +42,9 @@ export function parseFailoverHosts(connectionString: string): {
   return { connectionString: url.toString(), hosts };
 }
 
+/** Plazo para abrir la conexión TCP a un nodo cuando hay respaldo. */
+const CONNECT_TIMEOUT_MS = 1_500;
+
 /** Cuánto se salta un nodo que no aceptó la conexión (dura más que un failover). */
 const DOWN_FOR_MS = 10_000;
 
@@ -76,6 +79,9 @@ function failoverClient(hosts: { host: string; port: number }[], logger?: Logger
         ...rest,
         host: hosts[target]!.host,
         port: hosts[target]!.port,
+        // Solo para abrir la conexión de este cliente: un nodo caído se descarta rápido (dentro de
+        // Docker resolver el nombre de un contenedor muerto tarda ~5 s y conectar a su IP ~3 s).
+        connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
       });
       this.target = target;
     }
@@ -121,9 +127,9 @@ export function createPool(options: CreatePoolOptions): Pool {
     application_name: options.applicationName,
     max: options.max ?? 10,
     idleTimeoutMillis: 30_000,
-    // Con respaldo, un nodo caído se detecta rápido: dentro de Docker resolver el nombre de un
-    // contenedor muerto tarda ~5 s y conectar a su IP ~3 s.
-    connectionTimeoutMillis: hosts.length > 1 ? 1_500 : 3_000,
+    // En pg-pool este plazo incluye esperar un cliente libre: en un peak la cola de espera es
+    // normal, así que es holgado (el de abrir la conexión con respaldo es más corto, arriba).
+    connectionTimeoutMillis: 5_000,
     statement_timeout: options.statementTimeoutMs ?? 15_000,
     // Evita transacciones abiertas indefinidamente que retienen bloqueos (ADR-03).
     idle_in_transaction_session_timeout: 30_000,
