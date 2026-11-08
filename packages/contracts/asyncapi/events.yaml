@@ -434,6 +434,10 @@ components:
                   orderId: { type: string, format: uuid }
                   userId: { type: string, format: uuid }
                   total: { $ref: "#/components/schemas/Money" }
+                  eventIds:
+                    type: array
+                    description: "Eventos de la orden: queue libera el turno de esos eventos"
+                    items: { type: string, format: uuid }
     OrdenConfirmada:
       name: OrdenConfirmada
       title: "OrdenConfirmada v1"
@@ -453,6 +457,24 @@ components:
                   orderId: { type: string, format: uuid }
                   userId: { type: string, format: uuid }
                   total: { $ref: "#/components/schemas/Money" }
+                  orderCode: { type: string }
+                  buyerName: { type: string }
+                  buyerEmail: { type: string, format: email }
+                  lines:
+                    type: array
+                    description: "Lo que tickets debe emitir"
+                    items:
+                      type: object
+                      required: [lineId, kind, itemId, name, quantity, seatIds]
+                      properties:
+                        lineId: { type: string, format: uuid }
+                        kind: { type: string }
+                        itemId: { type: string, format: uuid }
+                        name: { type: string }
+                        quantity: { type: integer, minimum: 1 }
+                        eventId: { type: [string, "null"], format: uuid }
+                        eventDateId: { type: [string, "null"], format: uuid }
+                        seatIds: { type: array, items: { type: string, format: uuid } }
     OrdenCancelada:
       name: OrdenCancelada
       title: "OrdenCancelada v1"
@@ -471,6 +493,7 @@ components:
                 properties:
                   orderId: { type: string, format: uuid }
                   reason: { type: string }
+                  userId: { type: string, format: uuid }
     PagoAutorizado:
       name: PagoAutorizado
       title: "PagoAutorizado v1"
@@ -490,6 +513,7 @@ components:
                   paymentId: { type: string, format: uuid }
                   orderId: { type: string, format: uuid }
                   amount: { $ref: "#/components/schemas/Money" }
+                  authorizationCode: { type: [string, "null"] }
     PagoRechazado:
       name: PagoRechazado
       title: "PagoRechazado v1"
@@ -508,7 +532,18 @@ components:
                 properties:
                   paymentId: { type: string, format: uuid }
                   orderId: { type: string, format: uuid }
-                  reason: { type: string }
+                  reason:
+                    type: string
+                    examples:
+                      [
+                        REJECTED,
+                        UNSUPPORTED_TEST_EMAIL,
+                        CANCELED,
+                        EXPIRED,
+                        FORM_TIMEOUT,
+                        PROVIDER_UNAVAILABLE,
+                        AMOUNT_MISMATCH,
+                      ]
     PagoReembolsado:
       name: PagoReembolsado
       title: "PagoReembolsado v1"
@@ -528,6 +563,9 @@ components:
                   paymentId: { type: string, format: uuid }
                   orderId: { type: string, format: uuid }
                   amount: { $ref: "#/components/schemas/Money" }
+                  total:
+                    { type: boolean, description: "true si con esto quedó reembolsado completo" }
+                  reason: { type: string }
     EntradasEmitidas:
       name: EntradasEmitidas
       title: "EntradasEmitidas v1"

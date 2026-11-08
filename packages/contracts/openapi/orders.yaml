@@ -1,0 +1,338 @@
+openapi: 3.1.0
+info:
+  title: orders-service
+  version: 1.0.0
+  description: >
+    Carro (Redis, ADR-01), checkout, órdenes y promociones atómicas; orquesta la saga de compra
+    (docs/services/payments.md §7). Montos CLP como string decimal, siempre calculados en el
+    servidor. Público vía gateway: `/orders/*` → `/v1/*`; `/orders/admin/*` solo admin.
+servers:
+  - url: http://localhost:3007
+security: [{ bearer: [] }]
+paths:
+  /health/live:
+    $ref: "./common.yaml#/paths/~1health~1live"
+  /health/ready:
+    $ref: "./common.yaml#/paths/~1health~1ready"
+  /v1/cart:
+    get:
+      operationId: getCart
+      responses:
+        "200": { $ref: "#/components/responses/Cart" }
+    delete:
+      operationId: clearCart
+      responses:
+        "204": { description: Carro vacío }
+  /v1/cart/items:
+    post:
+      operationId: addCartItems
+      summary: Agrega ítems; con replaceEventDateId reemplaza los de esa función
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [items]
+              properties:
+                replaceEventDateId: { type: string, format: uuid }
+                items:
+                  { type: array, maxItems: 20, items: { $ref: "#/components/schemas/CartItem" } }
+      responses:
+        "200": { $ref: "#/components/responses/Cart" }
+        "409": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/cart/items/{key}:
+    delete:
+      operationId: removeCartItem
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string, maxLength: 120 } }
+      responses:
+        "200":
+          description: Ítem quitado (el BFF libera su reserva)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  removed:
+                    oneOf: [{ $ref: "#/components/schemas/CartItem" }, { type: "null" }]
+                  items: { type: array, items: { $ref: "#/components/schemas/CartItem" } }
+  /v1/checkout:
+    post:
+      operationId: checkout
+      summary: Crea la orden PENDING_PAYMENT desde el carro e inicia el pago
+      parameters: [{ $ref: "./common.yaml#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [buyer]
+              properties:
+                buyer:
+                  type: object
+                  additionalProperties: false
+                  required: [name, email]
+                  properties:
+                    name: { type: string, maxLength: 120 }
+                    email: { type: string, format: email }
+                    phone: { type: [string, "null"] }
+                    document: { type: [string, "null"] }
+                promoCode: { type: [string, "null"] }
+      responses:
+        "201":
+          description: Orden creada; redirigir el navegador a redirectUrl (formulario del adquirente)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orderId, orderCode, total, redirectUrl]
+                properties:
+                  orderId: { type: string, format: uuid }
+                  orderCode: { type: string }
+                  total: { $ref: "#/components/schemas/Money" }
+                  redirectUrl: { type: [string, "null"], format: uri }
+        "409":
+          description: "CART_EMPTY, RESERVATION_EXPIRED, ITEM_UNAVAILABLE, PROMO_INVALID, LIMIT_PER_ORDER"
+          content:
+            application/problem+json:
+              schema: { $ref: "./common.yaml#/components/schemas/Problem" }
+        "422": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/promos/validate:
+    post:
+      operationId: validatePromo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: Resultado (no consume usos; el checkout lo hace de forma atómica)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [valid]
+                properties:
+                  valid: { type: boolean }
+                  code: { type: string }
+                  percentOff: { type: integer }
+                  reason: { type: string }
+  /v1/orders:
+    get:
+      operationId: myOrders
+      responses:
+        "200":
+          description: Órdenes del usuario
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Order" } }
+  /v1/orders/{code}:
+    get:
+      operationId: getOrder
+      summary: Orden del usuario (o admin)
+      parameters: [{ $ref: "#/components/parameters/Code" }]
+      responses:
+        "200":
+          description: Orden
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/orders/{code}/pay:
+    post:
+      operationId: retryPayment
+      summary: Reabre el pago de una orden pendiente
+      parameters: [{ $ref: "#/components/parameters/Code" }]
+      responses:
+        "200":
+          description: URL del formulario
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderCode: { type: string }
+                  redirectUrl: { type: [string, "null"] }
+  /internal/orders/{id}:
+    get:
+      operationId: orderForPayment
+      summary: "(payments) monto, estado y vencimiento; requiere x-internal-token"
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Datos para cobrar
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, orderCode, userId, status, total, fees, buyerEmail, expiresAt]
+                properties:
+                  id: { type: string, format: uuid }
+                  orderCode: { type: string }
+                  userId: { type: string, format: uuid }
+                  status: { $ref: "#/components/schemas/OrderStatus" }
+                  total: { $ref: "#/components/schemas/Money" }
+                  fees: { $ref: "#/components/schemas/Money" }
+                  buyerEmail: { type: string, format: email }
+                  expiresAt: { type: string, format: date-time }
+  /v1/admin/orders:
+    get:
+      operationId: adminOrders
+      responses:
+        "200":
+          description: Órdenes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Order" } }
+  /v1/admin/orders/{id}/refund:
+    post:
+      operationId: adminRefundOrder
+      summary: Reembolso total de una orden confirmada (el cupo vuelve a la venta)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Orden en REFUND_PENDING
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "409": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/admin/promos:
+    get:
+      operationId: adminPromos
+      responses:
+        "200": { description: Códigos de descuento }
+    post:
+      operationId: adminCreatePromo
+      requestBody: { $ref: "#/components/requestBodies/Promo" }
+      responses:
+        "201": { description: Creado }
+        "409": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/admin/promos/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: adminUpdatePromo
+      requestBody: { $ref: "#/components/requestBodies/Promo" }
+      responses:
+        "200": { description: Actualizado }
+    delete:
+      operationId: adminDeletePromo
+      responses:
+        "204": { description: Eliminado }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT (EdDSA)
+  parameters:
+    Code:
+      name: code
+      in: path
+      required: true
+      schema: { type: string, pattern: "^TK-[0-9A-Z]{8}$" }
+  schemas:
+    Money:
+      $ref: "./common.yaml#/components/schemas/Money"
+    OrderStatus:
+      type: string
+      enum: [PENDING_PAYMENT, CONFIRMED, CANCELLED, REFUND_PENDING, REFUNDED]
+    CartItem:
+      type: object
+      additionalProperties: false
+      required: [key, kind, itemId, quantity, unitPrice, unitFee]
+      properties:
+        key: { type: string }
+        kind: { type: string, examples: [ticket_type, product] }
+        itemId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 8 }
+        reservationId: { type: string, format: uuid }
+        eventId: { type: string, format: uuid }
+        eventDateId: { type: string, format: uuid }
+        display: { type: object, description: "Solo para mostrar" }
+        unitPrice: { type: integer, description: "Informativo: el checkout recalcula" }
+        unitFee: { type: integer }
+    Order:
+      type: object
+      required: [id, orderCode, userId, subtotal, fees, discount, total, status, expiresAt, lines]
+      properties:
+        id: { type: string, format: uuid }
+        orderCode: { type: string }
+        userId: { type: string, format: uuid }
+        buyer:
+          type: object
+          properties:
+            name: { type: string }
+            email: { type: string }
+            phone: { type: [string, "null"] }
+            document: { type: [string, "null"] }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        fees: { $ref: "#/components/schemas/Money" }
+        discount: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        promoCode: { type: [string, "null"] }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        cancelReason: { type: [string, "null"] }
+        paymentId: { type: [string, "null"], format: uuid }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        confirmedAt: { type: [string, "null"], format: date-time }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              kind: { type: string }
+              itemId: { type: string, format: uuid }
+              name: { type: string }
+              quantity: { type: integer }
+              unitPrice: { $ref: "#/components/schemas/Money" }
+              unitFee: { $ref: "#/components/schemas/Money" }
+              reservationId: { type: [string, "null"], format: uuid }
+              eventId: { type: [string, "null"], format: uuid }
+              eventDateId: { type: [string, "null"], format: uuid }
+              seatIds: { type: array, items: { type: string, format: uuid } }
+  requestBodies:
+    Promo:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [code, percentOff, maxUses, active]
+            properties:
+              code: { type: string, pattern: "^[A-Z0-9_-]{2,40}$" }
+              percentOff: { type: integer, minimum: 1, maximum: 100 }
+              maxUses: { type: integer, minimum: 1 }
+              validUntil: { type: [string, "null"], format: date-time }
+              active: { type: boolean }
+  responses:
+    Cart:
+      description: Carro
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items: { type: array, items: { $ref: "#/components/schemas/CartItem" } }

@@ -198,6 +198,50 @@
         "vitest": "^5.1.0",
       },
     },
+    "services/orders": {
+      "name": "@services/orders",
+      "version": "0.1.0",
+      "dependencies": {
+        "@shared/commons": "*",
+        "amqplib": "^2.2.1",
+        "fastify": "^5.12.8",
+        "ioredis": "^6.0.0",
+        "pg": "^8.23.1",
+        "pino": "^10.4.0",
+        "zod": "^4.6.7",
+      },
+      "devDependencies": {
+        "@types/node": "^22.16.5",
+        "@types/pg": "^8.23.1",
+        "jose": "^6.2.15",
+        "tsup": "^9.0.0",
+        "tsx": "^4.23.15",
+        "typescript": "^5.8.3",
+        "vitest": "^5.1.0",
+      },
+    },
+    "services/payments": {
+      "name": "@services/payments",
+      "version": "0.1.0",
+      "dependencies": {
+        "@shared/commons": "*",
+        "amqplib": "^2.2.1",
+        "fastify": "^5.12.8",
+        "ioredis": "^6.0.0",
+        "pg": "^8.23.1",
+        "pino": "^10.4.0",
+        "zod": "^4.6.7",
+      },
+      "devDependencies": {
+        "@types/node": "^22.16.5",
+        "@types/pg": "^8.23.1",
+        "jose": "^6.2.15",
+        "tsup": "^9.0.0",
+        "tsx": "^4.23.15",
+        "typescript": "^5.8.3",
+        "vitest": "^5.1.0",
+      },
+    },
     "services/queue": {
       "name": "@services/queue",
       "version": "0.1.0",
@@ -233,6 +277,25 @@
       "devDependencies": {
         "@types/node": "^22.16.5",
         "@types/pg": "^8.23.1",
+        "tsup": "^9.0.0",
+        "tsx": "^4.23.15",
+        "typescript": "^5.8.3",
+        "vitest": "^5.1.0",
+      },
+    },
+    "services/webpay-mock": {
+      "name": "@services/webpay-mock",
+      "version": "0.1.0",
+      "dependencies": {
+        "@fastify/formbody": "^9.0.1",
+        "@shared/commons": "*",
+        "fastify": "^5.12.8",
+        "ioredis": "^6.0.0",
+        "pino": "^10.4.0",
+        "zod": "^4.6.7",
+      },
+      "devDependencies": {
+        "@types/node": "^22.16.5",
         "tsup": "^9.0.0",
         "tsx": "^4.23.15",
         "typescript": "^5.8.3",
@@ -390,6 +453,8 @@
     "@fastify/error": ["@fastify/error@4.2.1", "", {}, "sha512-MYBumuIwP+5MIpXSyKm6/o1Eigcoij186lWUssX3LH5U8KWqU0ktZhzC4CErIX9EJeQeRGI+zJZQWakBlFbUcg=="],
 
     "@fastify/fast-json-stringify-compiler": ["@fastify/fast-json-stringify-compiler@5.1.1", "", { "dependencies": { "fast-json-stringify": "^7.0.0" } }, "sha512-pyxRKk7UpUnnrztP9pF4+ZYxusEQ4LifTyzRdiXmyql1QezNHxO02D25MVU2o4kMeAMYWAjG6RKRlojgkbiDAw=="],
+
+    "@fastify/formbody": ["@fastify/formbody@9.0.1", "", { "dependencies": { "fast-querystring": "^1.1.2", "fastify-plugin": "^6.0.0" } }, "sha512-QaUet4NQavwnl6iPYMaf5hJC2N7kRPOmC58RhDiFThfg7Hcc8X2LdpcEfmaOEBimq5z7yZLy1e1q+PIv3o3tFQ=="],
 
     "@fastify/forwarded": ["@fastify/forwarded@3.1.2", "", {}, "sha512-89WiRG+hW3VQSfCwg4Hb8b43PeyEX15K5+lEfsZ4EUth/FyOjS/lv8HsVuswUNXWiSnxMGNouE/fq/0w3VumHQ=="],
 
@@ -727,9 +792,15 @@
 
     "@services/inventory": ["@services/inventory@workspace:services/inventory"],
 
+    "@services/orders": ["@services/orders@workspace:services/orders"],
+
+    "@services/payments": ["@services/payments@workspace:services/payments"],
+
     "@services/queue": ["@services/queue@workspace:services/queue"],
 
     "@services/template": ["@services/template@workspace:services/template"],
+
+    "@services/webpay-mock": ["@services/webpay-mock@workspace:services/webpay-mock"],
 
     "@shared/commons": ["@shared/commons@workspace:packages/commons"],
 
@@ -1575,6 +1646,8 @@
 
     "@fastify/cors/fastify-plugin": ["fastify-plugin@6.0.1", "", {}, "sha512-4wW4RxSmvPXLrh5mgQEiu43qU3bw44N2ss4FTkTkQIbprUhE+/s43QX0j/ttcztdWK7PEkHqVthdc5GdEGDvjA=="],
 
+    "@fastify/formbody/fastify-plugin": ["fastify-plugin@6.0.1", "", {}, "sha512-4wW4RxSmvPXLrh5mgQEiu43qU3bw44N2ss4FTkTkQIbprUhE+/s43QX0j/ttcztdWK7PEkHqVthdc5GdEGDvjA=="],
+
     "@fastify/http-proxy/fastify-plugin": ["fastify-plugin@6.0.1", "", {}, "sha512-4wW4RxSmvPXLrh5mgQEiu43qU3bw44N2ss4FTkTkQIbprUhE+/s43QX0j/ttcztdWK7PEkHqVthdc5GdEGDvjA=="],
 
     "@fastify/reply-from/fastify-plugin": ["fastify-plugin@6.0.1", "", {}, "sha512-4wW4RxSmvPXLrh5mgQEiu43qU3bw44N2ss4FTkTkQIbprUhE+/s43QX0j/ttcztdWK7PEkHqVthdc5GdEGDvjA=="],
@@ -1595,9 +1668,15 @@
 
     "@services/inventory/zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
 
+    "@services/orders/zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
+
+    "@services/payments/zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
+
     "@services/queue/zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
 
     "@services/template/zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
+
+    "@services/webpay-mock/zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
 
     "@shared/commons/zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
 
