@@ -7,7 +7,7 @@
  *
  *   npm run simulate -w @tools/queue-simulator -- --event lumen-tour-santiago --bots 2000
  */
-import { randomBytes, randomInt } from "node:crypto";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +29,8 @@ const { values: args } = parseArgs({
     window: { type: "string" },
     "admin-email": { type: "string", default: "admin@ticketera.local" },
     "admin-password": { type: "string", default: "admin-dev-password-123" },
-    "keep-reservations": { type: "boolean", default: false },
+    "keep-orders": { type: "boolean", default: false },
+    webpay: { type: "string", default: "http://127.0.0.1:3005" },
     "register-concurrency": { type: "string", default: "16" },
   },
 });
@@ -39,6 +40,7 @@ const RAMP_MS = Number(args.ramp) * 1000;
 const ACCEPT_RATIO = Number(args["accept-ratio"]);
 const ABANDON_RATIO = Number(args["abandon-ratio"]);
 const HOLD_MS = Number(args["hold-seconds"]) * 1000;
+const WEBPAY = args.webpay!;
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", ".data");
 const USERS_FILE = join(DATA_DIR, "users.json");
 
@@ -47,6 +49,9 @@ const latency = {
   join: new Latencies(),
   status: new Latencies(),
   reserve: new Latencies(),
+  checkout: new Latencies(),
+  /** Desde el retorno del adquirente hasta la orden confirmada o cancelada (saga asíncrona). */
+  payment: new Latencies(),
   waitToAdmission: new Latencies(),
 };
 const counters = new Counters();
@@ -233,18 +238,100 @@ async function runBot(
     }
   }
 
-  // "Paga": @acceptme conserva la reserva (el cobro real llega en la Fase 5); @rejectme la libera.
+  // Paga de verdad: carro → checkout → formulario del adquirente → retorno → orden.
   await sleep(randomInt(Math.max(1, HOLD_MS)));
-  if (reservationId && user.email.endsWith("@rejectme.com")) {
-    const released = await client.request("DELETE", `/inventory/reservations/${reservationId}`);
-    counters.inc(released.status === 204 ? "released_rejected" : `release_${released.status}`);
-    for (const [seat, owner] of seatOwners) if (owner === index) seatOwners.delete(seat);
+  if (reservationId) {
+    const expected = user.email.endsWith("@acceptme.com") ? "CONFIRMED" : "CANCELLED";
+    const final = await pay(client, user, reservationId, ctx);
+    counters.inc(`order_${final ?? "SIN_RESULTADO"}`);
+    if (final === "CONFIRMED") confirmedOrders.push({ client, code: lastOrderCode.get(client)! });
+    if (final !== expected)
+      failures.push(`bot ${index} (${user.email}): orden ${final} (esperada ${expected})`);
+    if (final !== "CONFIRMED") {
+      for (const [seat, owner] of seatOwners) if (owner === index) seatOwners.delete(seat);
+    }
   }
-  // Libera el cupo de la fila para el siguiente.
+  // Libera el cupo de la fila para el siguiente (si creó orden, queue ya lo hizo: idempotente).
   if (admission) {
     const done = await client.request("POST", `/queue/events/${ctx.eventId}/complete`);
     counters.inc(done.status === 204 ? "completed" : `complete_${done.status}`);
   }
+}
+
+const confirmedOrders: { client: ApiClient; code: string }[] = [];
+const lastOrderCode = new Map<ApiClient, string>();
+
+/**
+ * Compra como el navegador: agrega la reserva al carro, hace checkout (con clave de idempotencia),
+ * "aprieta Pagar" en el formulario de webpay-mock y sigue el retorno a payments. Devuelve el estado
+ * final de la orden (la confirma la saga de forma asíncrona).
+ */
+async function pay(
+  client: ApiClient,
+  user: BotUser,
+  reservationId: string,
+  ctx: { eventId: string; dateId: string },
+): Promise<string | undefined> {
+  const reservation = await client.request<{ ticketTypeId: string; quantity: number }>(
+    "GET",
+    `/inventory/reservations/${reservationId}`,
+  );
+  await client.request("POST", "/orders/cart/items", {
+    body: {
+      replaceEventDateId: ctx.dateId,
+      items: [
+        {
+          key: `res:${reservationId}`,
+          kind: "ticket_type",
+          itemId: reservation.body.ticketTypeId,
+          quantity: reservation.body.quantity,
+          reservationId,
+          eventId: ctx.eventId,
+          eventDateId: ctx.dateId,
+          unitPrice: 0,
+          unitFee: 0,
+        },
+      ],
+    },
+  });
+  const checkout = await client.request<{
+    orderCode: string;
+    redirectUrl: string | null;
+    reason?: string;
+  }>("POST", "/orders/checkout", {
+    body: { buyer: { name: "Bot", email: user.email } },
+    headers: { "idempotency-key": randomUUID() },
+  });
+  latency.checkout.add(checkout.ms);
+  if (checkout.status !== 201 || !checkout.body.redirectUrl) {
+    counters.inc(`checkout_${checkout.status}_${checkout.body.reason ?? "?"}`);
+    return undefined;
+  }
+  lastOrderCode.set(client, checkout.body.orderCode);
+  const started = performance.now();
+  const token = new URL(checkout.body.redirectUrl).searchParams.get("token_ws")!;
+  // El formulario del adquirente (directo a webpay-mock: Nginx limitaría a los bots por IP).
+  const form = await fetch(`${WEBPAY}/webpay/form/pay`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `token_ws=${token}`,
+    redirect: "manual",
+  });
+  const returnUrl = new URL(form.headers.get("location") ?? "");
+  // return_url pública (Nginx /api) → gateway directo.
+  await client.request("GET", `/payments/return${returnUrl.search}`, { redirect: "manual" });
+  for (let i = 0; i < 60; i++) {
+    const order = await client.request<{ status: string }>(
+      "GET",
+      `/orders/orders/${checkout.body.orderCode}`,
+    );
+    if (order.body.status && order.body.status !== "PENDING_PAYMENT") {
+      latency.payment.add(performance.now() - started);
+      return order.body.status;
+    }
+    await sleep(250);
+  }
+  return "PENDING_PAYMENT";
 }
 
 async function main() {
@@ -355,12 +442,36 @@ async function main() {
   if (!audit.body.ok)
     failures.push(`auditoría de inventory: ${JSON.stringify(audit.body.ticketTypes)}`);
 
-  if (!args["keep-reservations"]) {
-    // Devuelve el cupo para la próxima corrida.
+  // Reservas que no llegaron a orden: se liberan.
+  await Promise.all(
+    reservationsMade.map(({ id, client }) =>
+      client.request("DELETE", `/inventory/reservations/${id}`),
+    ),
+  );
+  const ledger = await admin.request<{ balanced: boolean; balances: Record<string, string> }>(
+    "GET",
+    "/payments/admin/ledger/check",
+  );
+  if (!ledger.body.balanced) failures.push(`ledger desbalanceado: ${JSON.stringify(ledger.body)}`);
+
+  if (!args["keep-orders"] && confirmedOrders.length > 0) {
+    // Devuelve el cupo para la próxima corrida: reembolso real (payments + inventory).
+    log(
+      `reembolsando ${confirmedOrders.length} órdenes confirmadas (--keep-orders para conservarlas)…`,
+    );
+    const orders = await admin.request<{ items: { id: string; orderCode: string }[] }>(
+      "GET",
+      "/orders/admin/orders",
+    );
+    const byCode = new Map((orders.body.items ?? []).map((order) => [order.orderCode, order.id]));
+    let next = 0;
     await Promise.all(
-      reservationsMade.map(({ id, client }) =>
-        client.request("DELETE", `/inventory/reservations/${id}`),
-      ),
+      Array.from({ length: 8 }, async () => {
+        while (next < confirmedOrders.length) {
+          const id = byCode.get(confirmedOrders[next++]!.code);
+          if (id) await admin.request("POST", `/orders/admin/orders/${id}/refund`);
+        }
+      }),
     );
   }
   if (args.slots || args.window) {
@@ -380,12 +491,13 @@ async function main() {
     counters: counters.toJSON(),
     latencyMs: Object.fromEntries(Object.entries(latency).map(([name, l]) => [name, l.summary()])),
     inventoryAuditOk: audit.body.ok,
+    ledgerBalanced: ledger.body.balanced,
     failures,
   };
   process.stdout.write(`\n${JSON.stringify(report, null, 2)}\n`);
   log(
     failures.length === 0
-      ? "OK: 0 sobreventas, cupos respetados"
+      ? "OK: 0 sobreventas, cupos respetados, pagos coherentes y ledger balanceado"
       : `FALLÓ: ${failures.length} verificaciones`,
   );
   process.exit(failures.length === 0 ? 0 : 1);

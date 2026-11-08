@@ -21,7 +21,11 @@ export class ApiClient {
   async request<T = Record<string, unknown>>(
     method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
-    options: { body?: unknown; headers?: Record<string, string> } = {},
+    options: {
+      body?: unknown;
+      headers?: Record<string, string>;
+      redirect?: "follow" | "manual";
+    } = {},
   ): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = {
       accept: "application/json",
@@ -37,6 +41,7 @@ export class ApiClient {
         headers,
         ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
         signal: AbortSignal.timeout(30_000),
+        ...(options.redirect ? { redirect: options.redirect } : {}),
       });
       const text = await response.text();
       return {
