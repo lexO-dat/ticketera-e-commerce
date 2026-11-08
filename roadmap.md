@@ -65,8 +65,9 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 
 ## Fase 6 — tickets + scanner
 
-- [ ] Emisión asíncrona con QR firmado; historial
-- [ ] App de validación con check-in atómico
+- [x] Emisión asíncrona (al confirmarse la orden) con QR firmado EdDSA; historial en la orden y en Mi cuenta
+- [x] App de validación (`apps/scanner`, cámara o código) con check-in atómico y auditoría de cada escaneo
+- [x] Un reembolso anula las entradas no usadas
 
 ## Fase 7 — notifications (Python)
 

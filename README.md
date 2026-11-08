@@ -53,6 +53,8 @@ Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 | `services/inventory`    | Disponibilidad y reservas de 10 min con bloqueo pesimista (0 % sobreventa)                        |
 | `services/orders`       | Carro (Redis), checkout idempotente, órdenes y promociones atómicas; orquesta la saga de compra   |
 | `services/payments`     | Intentos de pago, idempotencia, ledger de doble entrada, reembolsos y conciliación                |
+| `services/tickets`      | Entradas con QR firmado, historial y check-in atómico                                             |
+| `apps/scanner`          | App de validación en puerta (https://localhost:8443/scanner/)                                     |
 | `services/webpay-mock`  | Adquirente simulado (único mock): API y formulario de Webpay Plus                                 |
 | `tools/queue-simulator` | Bots que hacen fila, reservan y pagan; verifica cupos, órdenes, ledger y 0 sobreventas            |
 | `infra/`                | `docker-compose.yml`, Postgres (réplica síncrona), Nginx                                          |
