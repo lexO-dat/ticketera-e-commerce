@@ -223,6 +223,7 @@ describe("registro de ítems vendibles", () => {
         unsaleableReason: null,
         capacity: null,
         maxPerOrder: 5,
+        requiresReservation: false,
         attributes: {},
       })),
     );

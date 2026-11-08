@@ -759,6 +759,7 @@ components:
           unsaleableReason,
           capacity,
           maxPerOrder,
+          requiresReservation,
           attributes,
         ]
       properties:
@@ -781,6 +782,9 @@ components:
             ]
         capacity: { type: [integer, "null"] }
         maxPerOrder: { type: integer }
+        requiresReservation:
+          type: boolean
+          description: "Solo se vende con una reserva exclusiva de inventory (orders lo exige)"
         attributes: { type: object }
     MoneyInput:
       oneOf:

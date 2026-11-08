@@ -101,6 +101,7 @@ interface LineRow {
   event_date_id: string | null;
   seat_ids: string[];
   attributes: Record<string, unknown>;
+  requires_reservation: boolean;
 }
 
 const SOURCE = "orders";
@@ -353,6 +354,14 @@ export function createOrderService(options: {
                 `${item.name} ya no está a la venta (${item.unsaleableReason})`,
               );
             }
+            // Sin reserva no hay venta para los ítems que la exigen (ASR03): el cliente no puede
+            // saltarse el inventario agregando la línea al carro sin reservar.
+            if (item.requiresReservation && !line.reservation) {
+              throw AppError.conflict(
+                "RESERVATION_REQUIRED",
+                `${item.name} necesita una reserva vigente; vuelve a elegir tus entradas`,
+              );
+            }
             if (!line.reservation && line.quantity > item.maxPerOrder) {
               throw AppError.conflict(
                 "LIMIT_PER_ORDER",
@@ -422,8 +431,8 @@ export function createOrderService(options: {
             for (const line of priced) {
               await client.query(
                 `insert into order_lines (id, order_id, kind, item_id, name, quantity, unit_price, unit_fee,
-                   reservation_id, event_id, event_date_id, seat_ids, attributes)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                   reservation_id, event_id, event_date_id, seat_ids, attributes, requires_reservation)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
                 [
                   newId(),
                   id,
@@ -440,6 +449,7 @@ export function createOrderService(options: {
                   line.reservation?.eventDateId ?? null,
                   line.reservation?.seatIds ?? [],
                   JSON.stringify(line.item.attributes),
+                  line.item.requiresReservation,
                 ],
               );
             }
@@ -534,11 +544,20 @@ export function createOrderService(options: {
       let sold = false;
       if (row.status === "PENDING_PAYMENT") {
         try {
+          if (lines.some((line) => line.requires_reservation && !line.reservation_id)) {
+            throw AppError.conflict("RESERVATION_REQUIRED", "Línea sin la reserva que exige");
+          }
           await inventory.sell(orderId, reservationIdsOf(lines));
           sold = true;
         } catch (error) {
-          if (!(error instanceof AppError) || error.code !== "CONFLICT") throw error; // reintenta el evento
-          logger.warn({ orderId }, "pago aprobado con la reserva vencida: reembolso automático");
+          // Falla transitoria (inventory caído, 5xx): se reintenta el evento. Un rechazo definitivo
+          // (reserva vencida u otro 4xx) no se arregla reintentando: se reembolsa el cobro en vez
+          // de dejarlo retenido con la orden pendiente.
+          if (!(error instanceof AppError) || error.status >= 500) throw error;
+          logger.warn(
+            { orderId, reason: error.reason ?? error.code },
+            "pago aprobado pero la venta no es posible: reembolso automático",
+          );
         }
       }
       if (sold) {

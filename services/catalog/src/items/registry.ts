@@ -19,6 +19,11 @@ export interface SellableItemSnapshot {
   /** Unidades publicadas (techo de inventory); null si no aplica. */
   capacity: number | null;
   maxPerOrder: number;
+  /**
+   * Si solo se vende con una reserva exclusiva de inventory (ADR-03). `orders` rechaza la línea
+   * que no la trae: así no se vende sin pasar por el inventario, sin conocer el tipo (ASR05).
+   */
+  requiresReservation: boolean;
   /** Datos propios del tipo (p. ej. fecha y sector de una entrada). */
   attributes: Record<string, unknown>;
 }
@@ -132,6 +137,7 @@ export const ticketTypeSource: SellableItemSource = {
         unsaleableReason: reason,
         capacity: row.capacity,
         maxPerOrder: MAX_TICKETS_PER_ORDER,
+        requiresReservation: true,
         attributes: {
           eventId: row.event_id,
           eventDateId: row.event_date_id,
@@ -175,6 +181,7 @@ export const productSource: SellableItemSource = {
       // El stock físico lo administra inventory (Fase 4).
       capacity: null,
       maxPerOrder: row.max_per_order,
+      requiresReservation: false,
       attributes: { sku: row.sku, eventId: row.event_id },
     }));
   },

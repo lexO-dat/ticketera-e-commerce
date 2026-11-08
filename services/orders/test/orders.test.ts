@@ -45,10 +45,11 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("orders (integración)", () => {
     refunds: [] as string[],
     intents: [] as string[],
   };
-  const flags = { sellFails: false };
+  const flags: { sellFails: boolean; sellError?: AppError } = { sellFails: false };
   const inventory: InventoryPort = {
     get: async (id) => reservations.get(id) ?? null,
     async sell(orderId, ids) {
+      if (flags.sellError) throw flags.sellError;
       if (flags.sellFails) throw AppError.conflict("RESERVATION_NOT_ACTIVE", "venció");
       calls.sell.push(orderId);
       for (const id of ids)
@@ -77,6 +78,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("orders (integración)", () => {
               saleable: true,
               unsaleableReason: null,
               maxPerOrder: 8,
+              requiresReservation: true,
               attributes: { eventId: EVENT },
             }
           : {
@@ -88,6 +90,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("orders (integración)", () => {
               saleable: true,
               unsaleableReason: null,
               maxPerOrder: 3,
+              requiresReservation: false,
               attributes: {},
             },
       );
@@ -263,6 +266,14 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("orders (integración)", () => {
     await expect(orders.checkout(thief, { buyer, promoCode: null }, newId())).rejects.toMatchObject(
       { reason: "RESERVATION_EXPIRED" },
     );
+    // Una entrada sin reserva no se vende: no se puede saltar el inventario (ASR03).
+    const sneaky = newId();
+    await createCart(redis, 600).add(sneaky, [
+      { key: "y", kind: "ticket_type", itemId: TICKET, quantity: 2, unitPrice: 0, unitFee: 0 },
+    ]);
+    await expect(
+      orders.checkout(sneaky, { buyer, promoCode: null }, newId()),
+    ).rejects.toMatchObject({ reason: "RESERVATION_REQUIRED" });
   });
 
   it("promoción atómica: 30 compras simultáneas con 5 usos disponibles → exactamente 5 descuentos", async () => {
@@ -339,6 +350,45 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("orders (integración)", () => {
     expect(calls.release.some((ids) => ids.includes(r.id))).toBe(true);
     const { rows } = await pool.query("select used_count from promo_codes where code = 'VUELVE'");
     expect(rows[0].used_count).toBe(0);
+  });
+
+  it("venta rechazada en forma definitiva → reembolso; inventory caído → se reintenta", async () => {
+    const user = newId();
+    await fillCart(user);
+    const { orderId } = await orders.checkout(user, { buyer, promoCode: null }, newId());
+    const paymentId = newId();
+    const event = payment("PagoAutorizado", { paymentId, orderId, amount: "220000" });
+
+    flags.sellError = new AppError(ErrorCode.DEPENDENCY_UNAVAILABLE);
+    await expect(handlePaymentEvent(pool, orders, event)).rejects.toBeInstanceOf(AppError);
+    expect((await orders.getById(orderId))!.status).toBe("PENDING_PAYMENT");
+
+    flags.sellError = AppError.validation([{ path: "reservationIds", message: "inválido" }]);
+    await handlePaymentEvent(pool, orders, event);
+    flags.sellError = undefined;
+    expect((await orders.getById(orderId))!.status).toBe("REFUND_PENDING");
+    expect(calls.refunds).toContain(`${paymentId}|refund-late-${paymentId}`);
+  });
+
+  it("al confirmar, una línea que exige reserva y no la tiene no se vende: se reembolsa", async () => {
+    const user = newId();
+    await fillCart(user);
+    const { orderId } = await orders.checkout(user, { buyer, promoCode: null }, newId());
+    const { rows } = await pool.query(
+      "select requires_reservation from order_lines where order_id = $1",
+      [orderId],
+    );
+    expect(rows.map((row) => row.requires_reservation)).toEqual([true]);
+    // Orden anterior al control del checkout (o dato corrupto): la línea perdió su reserva.
+    await pool.query("update order_lines set reservation_id = null where order_id = $1", [orderId]);
+    const paymentId = newId();
+    await handlePaymentEvent(
+      pool,
+      orders,
+      payment("PagoAutorizado", { paymentId, orderId, amount: "220000" }),
+    );
+    expect((await orders.getById(orderId))!.status).toBe("REFUND_PENDING");
+    expect(calls.sell).not.toContain(orderId);
   });
 
   it("pago aprobado con la reserva vencida → no se confirma y se reembolsa automáticamente", async () => {

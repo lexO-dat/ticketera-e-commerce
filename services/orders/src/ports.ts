@@ -35,6 +35,8 @@ export interface SellableItem {
   saleable: boolean;
   unsaleableReason: string | null;
   maxPerOrder: number;
+  /** El ítem solo se vende con una reserva de inventory (p. ej. entradas). */
+  requiresReservation: boolean;
   attributes: Record<string, unknown>;
 }
 
@@ -72,6 +74,8 @@ export function httpInventory(client: ServiceClient): InventoryPort {
       return response.status === 404 ? null : response.body;
     },
     async sell(orderId, reservationIds) {
+      // Orden solo de productos: no hay reservas que vender.
+      if (reservationIds.length === 0) return;
       await client.request("POST", "/internal/reservations/sell", {
         body: { orderId, reservationIds },
         idempotencyKey: `sell-${orderId}`,
