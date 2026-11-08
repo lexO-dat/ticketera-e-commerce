@@ -16,6 +16,7 @@ Público vía gateway: `/queue/*` → `/v1/*`; `/queue/admin/*` solo admin.
 | ETA            | Posición / tasa real de admisión (EWMA); sin historial, cupos / ventana. `Retry-After` de 2, 5 o 10 s según cercanía                                                                             |
 | Token          | JWT EdDSA (`typ: admission+jwt`, `sub`, `evt`, `jti`, `exp`) con la clave `ADMISSION_SIGNING_KEY`; JWKS en `/.well-known/jwks.json`. El `jti` vive en Redis mientras dura la ventana (revocable) |
 | Configuración  | Dueño: catalog (`PUT /catalog/admin/events/:id/queue`). Se cachea 10 s y se actualiza al instante con `EventoActualizado`                                                                        |
+| Fin del turno  | El comprador lo termina (`complete`) o, al crear su orden, queue consume `OrdenCreada` y libera el cupo al instante                                                                              |
 | Falla de Redis | `join` / `status` responden 503 con `Retry-After`; inventory tampoco reserva sin poder verificar el turno: antes indisponible que sobreventa                                                     |
 | Eventos        | `TurnoCreado`, `TurnoAdmitido`, `TurnoVencido`, `TurnoCompletado` directo al broker (auditoría y métricas, _best effort_): la verdad vive en Redis y el servicio no tiene BD para un outbox      |
 

@@ -49,6 +49,17 @@ async function main(): Promise<void> {
     },
   });
 
+  // El comprador ya creó su orden: su turno termina y el cupo pasa al siguiente.
+  await bus.subscribe({
+    queue: "queue.order-events",
+    bindings: ["orders.OrdenCreada.*"],
+    handler: async (event) => {
+      const data = event.data as { userId?: string; eventIds?: string[] };
+      if (!data.userId) return;
+      for (const eventId of data.eventIds ?? []) await queue.complete(data.userId, eventId);
+    },
+  });
+
   // Admisor: corre en todas las réplicas; por evento actúa solo la líder (lock en Redis).
   let ticking = false;
   const admitter = setInterval(() => {
