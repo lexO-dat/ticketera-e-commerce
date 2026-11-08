@@ -4,7 +4,7 @@ Proyecto de Arquitectura de Software (UDP, Sección 2).
 
 - Guía para contribuir y reglas: [`AGENTS.md`](AGENTS.md)
 - Arquitectura (4+1, ADR): [`docs/architecture`](docs/architecture/README.md) · [`docs/adr`](docs/adr/README.md)
-- Hoja de ruta: [`roadmap.md`](roadmap.md)
+- Hoja de ruta: [`roadmap.md`](roadmap.md) · pendientes de infraestructura: [`todo.md`](todo.md)
 
 ## Puesta en marcha
 
@@ -13,7 +13,7 @@ Requisitos: Node 22.18+, Docker con Compose.
 ```bash
 npm install
 npm run infra:up      # infraestructura + todos los servicios (2 réplicas c/u) + gateway
-cp .env.example .env  # la web habla con el gateway en GATEWAY_URL
+cp apps/web/.env.example apps/web/.env  # la web habla con el gateway en GATEWAY_URL
 npm run dev           # web (TanStack Start) en http://localhost:8080 · vía Nginx: https://localhost:8443
 ```
 
@@ -43,7 +43,7 @@ Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 
 | Ruta                     | Contenido                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------- |
-| `src/`                   | Web actual (TanStack Start); se mueve a `apps/web` al terminar la migración (patrón _strangler_)  |
+| `apps/web`               | Web del comprador y panel admin (TanStack Start, React con SSR); habla solo con el gateway        |
 | `packages/commons`       | `@shared/commons`: errores, `ItemVendible`, CLP, logger, BD/outbox, eventos, Redis, servidor HTTP |
 | `packages/contracts`     | `@shared/contracts`: OpenAPI y AsyncAPI                                                           |
 | `services/template`      | Plantilla de servicio; `npm run new:service -- <nombre>` crea uno nuevo                           |

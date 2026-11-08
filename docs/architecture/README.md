@@ -346,16 +346,20 @@ flowchart TB
     PGA[("PostgreSQL primaria<br/>Zona A")] -->|replicación síncrona| PGB[("PostgreSQL réplica<br/>Zona B")]
     RDA[("Redis primario<br/>Zona A")] -->|replicación| RDB[("Redis réplica<br/>Zona B")]
   end
+  MON["🆕 pg-failover<br/>promueve y aísla (ADR-10)"] -.-> PGA & PGB
+  SEN["🆕 Redis Sentinel ×3<br/>quórum 2"] -.-> RDA & RDB
   ZA & ZB --> PGA
   ZA & ZB --> RDA
 ```
 
 Notas de despliegue:
 
-- En local todo corre con `infra/docker-compose.yml` (Postgres primaria + réplica, Redis + réplica,
-  RabbitMQ, Mailpit como SMTP, Nginx con TLS 1.3 haciendo de balanceador).
-- Failover de Postgres y Redis: Patroni / Sentinel (o equivalente) en producción; los servicios usan
-  _connection strings_ que apuntan al líder vigente.
+- En local todo corre con `infra/docker-compose.yml`: Postgres primaria y réplica, Redis con réplica y
+  tres Sentinel, RabbitMQ, Mailpit como SMTP, dos réplicas de cada servicio y del gateway, y Nginx
+  con TLS 1.3 como balanceador.
+- Failover (ADR-10): el monitor `pg-failover` promueve la réplica de Postgres y aísla a la primaria
+  vieja; el pool de `@shared/commons` busca solo el nodo que acepta escrituras. Los clientes de Redis
+  siguen a los Sentinel. `npm run test:failover` mide ≤ 5 s en cada escenario.
 - La fila depende de Redis: si Redis cae, la fila se **cierra** (los nuevos esperan con reintento) en vez
   de admitir sin control. Prefiere disponibilidad parcial a sobreventa.
 
@@ -363,7 +367,7 @@ Notas de despliegue:
 
 | Concern | Stakeholder | ASR | ADR |
 | --- | --- | --- | --- |
-| Evitar interrupciones durante una venta | Comprador / Administrador | ASR01 | ADR-01 |
+| Evitar interrupciones durante una venta | Comprador / Administrador | ASR01 | ADR-01, ADR-10 |
 | Soportar alta cantidad de compradores | Comprador / Organizador | ASR02 | ADR-02, ADR-06 |
 | Fila justa, sin bots | Comprador / Organizador / SecOps | ASR02, ASR04 | ADR-06 |
 | Evitar venta duplicada de una entrada | Organizador / Comprador | ASR03 | ADR-03 |

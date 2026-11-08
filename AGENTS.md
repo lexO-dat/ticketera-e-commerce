@@ -29,7 +29,7 @@ Metas de calidad (no negociables):
 
 ## 2. Regla principal: todo es propio (sin proveedores externos)
 
-El prototipo actual (`src/`) nació en Lovable y depende de **Supabase** (Postgres como API REST, Auth,
+El prototipo (hoy `apps/web`) nació en Lovable y dependía de **Supabase** (Postgres como API REST, Auth,
 RLS, `auth.admin`). Nuestro trabajo es **reemplazar cada capacidad de un proveedor externo por un
 microservicio propio**. Se permiten librerías open source bien mantenidas; **no** se permiten servicios
 gestionados de terceros (Supabase, Firebase, Auth0, Clerk, Stripe, SendGrid, Algolia, S3 gestionado, etc.).
@@ -163,7 +163,7 @@ Especificación completa: [`docs/services/payments.md`](docs/services/payments.m
 
 ```
 apps/
-  web/                 # web comprador + admin (hoy: src/ en la raíz, TanStack Start)
+  web/                 # web comprador + admin (TanStack Start, React con SSR)
   scanner/             # app de validación en puerta (RF15)
 services/
   gateway/  identity/  catalog/  queue/  inventory/
@@ -184,7 +184,7 @@ docs/
 Estado (Fases 1 a 8 completas): existen `packages/commons`, `packages/contracts`, `infra/`,
 `services/template`, `services/identity`, `services/gateway`, `services/catalog`,
 `services/queue`, `services/inventory`, `services/orders`, `services/payments`,
-`services/webpay-mock`, `services/tickets`, `services/notifications` (Python), `apps/scanner` y
+`services/webpay-mock`, `services/tickets`, `services/notifications` (Python), `apps/web`, `apps/scanner` y
 `tools/queue-simulator` y `tools/failover-test`; la web
 compra de punta a punta vía gateway (sesión BFF, catálogo, fila, reservas, carro, checkout, pago en
 Webpay simulado y entradas con QR), el personal valida en puerta con `apps/scanner` y los correos
@@ -192,9 +192,9 @@ salen por SMTP (Mailpit en desarrollo). Supabase ya no se usa: la web habla solo
 PostgreSQL y Redis tienen failover automático (ADR-10). Para crear un servicio: `npm run new:service -- <nombre>` (copia la plantilla y su contrato).
 Comandos y servicios locales: [`README.md`](README.md).
 
-Mientras dure la migración, la app actual sigue en `src/`. Se migra con patrón **strangler**: cada
-server function de `src/lib/*.functions.ts` pasa a llamar al gateway en vez de a Supabase, dominio por
-dominio, y al final se elimina `@supabase/supabase-js` y la carpeta `supabase/`.
+La migración con patrón **strangler** terminó: cada server function de `apps/web/src/lib/*.functions.ts`
+pasó, dominio por dominio, a llamar al gateway en vez de a Supabase, y se eliminaron
+`@supabase/supabase-js` y la carpeta `supabase/`.
 
 ## 8. Reglas de implementación
 
@@ -234,7 +234,7 @@ dominio, y al final se elimina `@supabase/supabase-js` y la carpeta `supabase/`.
   (`npm run lint:backend`, `npm run typecheck`, `npm test`, `npm run build:backend`).
 - Pruebas de integración: `npm run infra:up` y las variables `TEST_DATABASE_URL`, `TEST_REDIS_URL`,
   `TEST_AMQP_URL` (ver `packages/commons/README.md`). Sin ellas se omiten; en CI siempre corren.
-- Toda librería del backend usa `zod` 4; la web (`src/`) sigue en `zod` 3 hasta migrarla.
+- Toda librería del backend usa `zod` 4; la web (`apps/web`) sigue en `zod` 3 hasta migrarla.
 
 ## 9. Convenciones de git
 
@@ -258,11 +258,14 @@ Estado y fases detalladas en [`roadmap.md`](roadmap.md). Orden acordado:
 7. `notifications` (Python).
 8. Corte final: la web usa solo el gateway; se elimina Supabase. Pruebas de carga y de failover.
 
-## 11. Preguntas abiertas
+## 11. Decisiones tomadas (antes preguntas abiertas)
 
-- **Frontend**: la presentación indica _React / Next.js_; el prototipo usa **TanStack Start** (React con
-  SSR). Se mantiene TanStack Start salvo que el equipo decida migrar (requiere ADR).
-- **Broker**: la presentación dice _RabbitMQ / Kafka_; se elige **RabbitMQ** por simplicidad operativa y
-  colas con reintentos/DLQ. Revisar si aparece necesidad de _event sourcing_ o replay masivo.
-- **Productos (e-commerce)**: RF03 y RF14 aún no existen en el prototipo (solo entradas). Se modelan
-  como `ItemVendible` en `catalog`.
+- **Frontend**: la presentación indica _React / Next.js_; el equipo decidió quedarse con **TanStack
+  Start** (React con SSR) en `apps/web`. Migrar requiere un ADR nuevo.
+- **Broker**: la presentación dice _RabbitMQ / Kafka_; el equipo decidió **RabbitMQ** por simplicidad
+  operativa y colas con reintentos/DLQ. Cambiarlo requiere un ADR nuevo (p. ej. si aparece necesidad
+  de _event sourcing_ o replay masivo).
+- **Productos (e-commerce)**: RF03 y RF14 se modelan como `ItemVendible` en `catalog` y se venden en la
+  tienda de la web (`/tienda`), solos o junto con entradas.
+
+Pendientes de infraestructura fuera del alcance local: [`todo.md`](todo.md).

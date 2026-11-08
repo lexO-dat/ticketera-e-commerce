@@ -24,7 +24,7 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 - [x] `infra/docker-compose.yml`: Postgres primaria + réplica síncrona, Redis + réplica, RabbitMQ, Mailpit, Nginx TLS 1.3
 - [x] `@shared/commons` (logger, errores, `ItemVendible`, CLP, BD/outbox/inbox, bus de eventos, locks) y `packages/contracts` (OpenAPI 3.1, AsyncAPI 3)
 - [x] Plantilla de servicio (Fastify, health checks, migraciones, outbox, Dockerfile, tests), `npm run new:service` y CI (GitHub Actions)
-- [ ] Failover automático de Postgres/Redis (Patroni / Sentinel): se aborda en la Fase 8
+- [x] Failover automático de Postgres/Redis: hecho en la Fase 8 (ADR-10)
 
 ## Fase 2 — identity + gateway (reemplaza Supabase Auth y RLS)
 
@@ -52,7 +52,7 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 - [x] `tools/queue-simulator` con verificación de 0 sobreventas (2.000 bots en local, ver su README)
 - [x] La web usa la fila y las reservas reales (turno en cookie HttpOnly)
 - [x] `ReservaVendida` y conversión de reserva en venta: con orders (Fase 5)
-- [ ] Prueba de 10.000 usuarios en infraestructura dedicada (Fase 8)
+- [x] Prueba de 10.000 usuarios: en la Fase 8 (local); la versión en infraestructura dedicada está en `todo.md`
 
 ## Fase 5 — orders + payments + webpay-mock
 
@@ -86,5 +86,6 @@ Arquitectura y reglas: [`AGENTS.md`](AGENTS.md) · [`docs/architecture`](docs/ar
 - [x] Encontrado al medir: una entrada sin reserva se podía comprar (ahora `requiresReservation` del
       `ItemVendible`), una orden solo de productos no se confirmaba y un rechazo definitivo de inventory
       dejaba el cobro retenido (ahora se reembolsa)
-- [ ] Pendiente fuera del alcance local: RabbitMQ en clúster, monitor de failover redundante, prueba de
-      carga distribuida en infraestructura dedicada
+- [x] Tienda de productos en la web (`/tienda`) con carro mixto (entradas + productos)
+- [x] La web se movió a `apps/web` (workspace `@apps/web`); se quitaron los restos de Lovable (`bun.lock`)
+- Pendientes de infraestructura fuera del alcance local: ver [`todo.md`](todo.md)
