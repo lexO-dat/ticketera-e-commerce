@@ -32,6 +32,7 @@ const { values: args } = parseArgs({
     "keep-orders": { type: "boolean", default: false },
     webpay: { type: "string", default: "http://127.0.0.1:3005" },
     "register-concurrency": { type: "string", default: "16" },
+    "login-concurrency": { type: "string", default: "24" },
   },
 });
 
@@ -55,7 +56,8 @@ const latency = {
   waitToAdmission: new Latencies(),
 };
 const counters = new Counters();
-const seatOwners = new Map<string, number>();
+/** Butacas de cada bot cuya orden quedó confirmada (al final no puede haber repetidas). */
+const confirmedSeats = new Map<number, string[]>();
 const reservationsMade: { bot: number; id: string; client: ApiClient }[] = [];
 const failures: string[] = [];
 
@@ -147,9 +149,8 @@ async function runBot(
     types: TicketType[];
     seatsBySection: Map<string, string[]>;
   },
+  client: ApiClient,
 ) {
-  const client = new ApiClient(args.gateway!, botIp(index + 1));
-  if (!(await login(client, user))) return;
   const abandons = Math.random() < ABANDON_RATIO;
 
   const joined = await client.request<{ state: string }>(
@@ -198,6 +199,7 @@ async function runBot(
   const headers: Record<string, string> = admission ? { "x-admission-token": admission } : {};
   const wanted = 1 + randomInt(2);
   let reservationId: string | undefined;
+  let reservedSeats: string[] = [];
   for (let attempt = 0; attempt < 3 && !reservationId; attempt++) {
     const type = ctx.types[randomInt(ctx.types.length)]!;
     let body: Record<string, unknown>;
@@ -226,13 +228,7 @@ async function runBot(
     if (reserved.status === 201) {
       reservationId = reserved.body.id;
       counters.inc("reserved");
-      for (const seat of reserved.body.seatIds) {
-        const previous = seatOwners.get(seat);
-        if (previous !== undefined)
-          failures.push(`butaca ${seat} entregada a los bots ${previous} y ${index}`);
-        seatOwners.set(seat, index);
-      }
-      reservationsMade.push({ bot: index, id: reservationId, client });
+      reservedSeats = reserved.body.seatIds;
     } else {
       counters.inc(`reserve_${reserved.status}_${reserved.body.reason ?? "?"}`);
     }
@@ -244,12 +240,12 @@ async function runBot(
     const expected = user.email.endsWith("@acceptme.com") ? "CONFIRMED" : "CANCELLED";
     const final = await pay(client, user, reservationId, ctx);
     counters.inc(`order_${final ?? "SIN_RESULTADO"}`);
-    if (final === "CONFIRMED") confirmedOrders.push({ client, code: lastOrderCode.get(client)! });
+    if (final === "CONFIRMED") {
+      confirmedOrders.push({ client, code: lastOrderCode.get(client)! });
+      confirmedSeats.set(index, reservedSeats);
+    }
     if (final !== expected)
       failures.push(`bot ${index} (${user.email}): orden ${final} (esperada ${expected})`);
-    if (final !== "CONFIRMED") {
-      for (const [seat, owner] of seatOwners) if (owner === index) seatOwners.delete(seat);
-    }
   }
   // Libera el cupo de la fila para el siguiente (si creó orden, queue ya lo hizo: idempotente).
   if (admission) {
@@ -417,13 +413,31 @@ async function main() {
     );
   }, 5000);
 
+  // Los usuarios ya están en el sitio con su sesión antes de abrir la venta (como en un peak real,
+  // esperan en la prefila): el login no compite con la apertura. Su latencia se reporta aparte.
+  log(`iniciando sesión de ${users.length} bots…`);
+  const clients: (ApiClient | undefined)[] = new Array(users.length);
+  let nextLogin = 0;
+  await Promise.all(
+    Array.from({ length: Number(args["login-concurrency"]) }, async () => {
+      while (nextLogin < users.length) {
+        const index = nextLogin++;
+        const client = new ApiClient(args.gateway!, botIp(index + 1));
+        if (await login(client, users[index]!)) clients[index] = client;
+      }
+    }),
+  );
+  log(`${clients.filter(Boolean).length} sesiones activas; abre la venta`);
+
   const started = performance.now();
   const ctx = { eventId, dateId: date.id, types: date.ticketTypes, seatsBySection };
   await Promise.all(
     users.map(async (user, index) => {
       await sleep((RAMP_MS * index) / BOTS);
+      const client = clients[index];
+      if (!client) return;
       try {
-        await runBot(index, user, ctx);
+        await runBot(index, user, ctx, client);
       } catch (error) {
         counters.inc("bot_error");
         failures.push(`bot ${index}: ${error instanceof Error ? error.message : String(error)}`);
@@ -434,6 +448,17 @@ async function main() {
   sampling = false;
   clearInterval(progress);
   await sampler;
+
+  // 0 sobreventa vista por los compradores: ninguna butaca en dos órdenes confirmadas.
+  const owners = new Map<string, number>();
+  for (const [bot, seats] of confirmedSeats) {
+    for (const seat of seats) {
+      const previous = owners.get(seat);
+      if (previous !== undefined)
+        failures.push(`butaca ${seat} vendida a los bots ${previous} y ${bot}`);
+      owners.set(seat, bot);
+    }
+  }
 
   const audit = await admin.request<{ ok: boolean; ticketTypes: Record<string, unknown>[] }>(
     "GET",
@@ -459,20 +484,23 @@ async function main() {
     log(
       `reembolsando ${confirmedOrders.length} órdenes confirmadas (--keep-orders para conservarlas)…`,
     );
-    const orders = await admin.request<{ items: { id: string; orderCode: string }[] }>(
-      "GET",
-      "/orders/admin/orders",
-    );
-    const byCode = new Map((orders.body.items ?? []).map((order) => [order.orderCode, order.id]));
+    // Cada bot consulta su propia orden (el listado admin solo trae las más recientes).
     let next = 0;
+    let refunded = 0;
     await Promise.all(
       Array.from({ length: 8 }, async () => {
         while (next < confirmedOrders.length) {
-          const id = byCode.get(confirmedOrders[next++]!.code);
-          if (id) await admin.request("POST", `/orders/admin/orders/${id}/refund`);
+          const { client, code } = confirmedOrders[next++]!;
+          const order = await client.request<{ id?: string }>("GET", `/orders/orders/${code}`);
+          const refund = order.body.id
+            ? await admin.request("POST", `/orders/admin/orders/${order.body.id}/refund`)
+            : order;
+          if (refund.status === 200) refunded += 1;
+          else failures.push(`no se pudo reembolsar ${code}: ${refund.status}`);
         }
       }),
     );
+    log(`${refunded}/${confirmedOrders.length} reembolsos pedidos`);
   }
   if (args.slots || args.window) {
     await admin.request("PUT", `/catalog/admin/events/${eventId}/queue`, { body: originalQueue });

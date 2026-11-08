@@ -1,6 +1,7 @@
 # queue-simulator — prueba de carga de la fila, la reserva y el pago
 
-Bots reales contra el gateway (sin atajos): se registran e inician sesión en identity, entran a la
+Bots reales contra el gateway (sin atajos): se registran e inician sesión en identity antes de abrir
+la venta (como en un peak real, esperan con la sesión abierta; `--login-concurrency`), entran a la
 fila, consultan su estado respetando `Retry-After` (con jitter) y, al ser admitidos, compiten por
 butacas y cupos en inventory con su token de admisión. Luego **pagan de verdad**: carro → checkout
 idempotente → formulario de webpay-mock → retorno a payments → orden. Mezcla `@acceptme.com` (la
@@ -11,7 +12,7 @@ Verifica y sale con código ≠ 0 si falla:
 
 - Admitidos activos nunca superan `concurrentSlots` (muestreo cada segundo).
 - 0 sobreventas: auditoría de inventory (capacidad, butacas duplicadas, contadores).
-- Ninguna butaca entregada a dos bots.
+- Ninguna butaca en dos órdenes confirmadas.
 - Cada orden termina como corresponde a su email y el ledger de payments queda balanceado.
 
 ```bash
@@ -24,6 +25,7 @@ npm run simulate:queue -- --event lumen-tour-santiago --bots 2000 --slots 100 --
 | `--bots` / `--ramp`    | 500 / 20 s              | Cantidad de bots y tiempo en que van llegando                                                                                   |
 | `--slots` / `--window` | config. del evento      | Ajusta la fila durante la corrida (vía catalog) y la restaura al final                                                          |
 | `--accept-ratio`       | 0.8                     | Fracción de cuentas `@acceptme.com`                                                                                             |
+| `--login-concurrency`  | 24                      | Inicios de sesión simultáneos antes de abrir la venta (Argon2id: el costo es intencional)                                       |
 | `--abandon-ratio`      | 0.05                    | Fracción que deja de consultar                                                                                                  |
 | `--hold-seconds`       | 3                       | Espera máxima antes de pagar                                                                                                    |
 | `--keep-orders`        | no                      | Por defecto reembolsa (de verdad) las órdenes confirmadas al terminar, para que la próxima corrida tenga cupo                   |
