@@ -102,7 +102,10 @@ function AdminDashboard() {
           <SectionTitle>Eventos con mejor desempeño</SectionTitle>
           <Hairline />
           {data.topEvents.map((event) => (
-            <div key={event.id} className="flex items-baseline justify-between gap-6 border-b border-ash pb-3">
+            <div
+              key={event.id}
+              className="flex items-baseline justify-between gap-6 border-b border-ash pb-3"
+            >
               <div className="grid gap-1">
                 <span className="text-body">{event.title}</span>
                 <MetaText>

@@ -25,9 +25,7 @@ export function HeroMedia({
     <section
       className={cn(
         "relative isolate w-full overflow-hidden bg-carbon",
-        height === "tall"
-          ? "min-h-[74svh] md:min-h-[82svh]"
-          : "min-h-[52svh] md:min-h-[60svh]",
+        height === "tall" ? "min-h-[74svh] md:min-h-[82svh]" : "min-h-[52svh] md:min-h-[60svh]",
         className,
       )}
     >

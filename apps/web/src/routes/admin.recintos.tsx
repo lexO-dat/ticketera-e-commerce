@@ -108,10 +108,16 @@ function AdminVenuesPage() {
         <SectionTitle>{venueForm.id ? "Editar recinto" : "Nuevo recinto"}</SectionTitle>
         <div className="grid gap-6 md:grid-cols-4">
           <Field label="Nombre">
-            <TextInput value={venueForm.name} onChange={(e) => setVenueForm({ ...venueForm, name: e.target.value })} />
+            <TextInput
+              value={venueForm.name}
+              onChange={(e) => setVenueForm({ ...venueForm, name: e.target.value })}
+            />
           </Field>
           <Field label="Ciudad">
-            <TextInput value={venueForm.city} onChange={(e) => setVenueForm({ ...venueForm, city: e.target.value })} />
+            <TextInput
+              value={venueForm.city}
+              onChange={(e) => setVenueForm({ ...venueForm, city: e.target.value })}
+            />
           </Field>
           <Field label="Dirección">
             <TextInput
@@ -185,7 +191,10 @@ function AdminVenuesPage() {
               <div className="grid gap-8 rounded-card bg-plaster p-6">
                 <div className="grid gap-3">
                   {(venue.venue_sections ?? []).map((section) => (
-                    <div key={section.id} className="flex flex-wrap items-center gap-6 border-b border-ash pb-3">
+                    <div
+                      key={section.id}
+                      className="flex flex-wrap items-center gap-6 border-b border-ash pb-3"
+                    >
                       <span className="text-body">{section.name}</span>
                       <MetaText className="inline">
                         {section.kind === "seated" ? "Numerado" : "General"} · cap.{" "}
@@ -216,7 +225,8 @@ function AdminVenuesPage() {
                         <GhostButton
                           arrow={false}
                           onClick={() => {
-                            if (confirm("¿Eliminar sector y sus butacas?")) removeSection.mutate(section.id);
+                            if (confirm("¿Eliminar sector y sus butacas?"))
+                              removeSection.mutate(section.id);
                           }}
                         >
                           <span className="text-ember underline">Eliminar</span>
@@ -239,7 +249,10 @@ function AdminVenuesPage() {
                       <Select
                         value={sectionForm.kind}
                         onChange={(e) =>
-                          setSectionForm({ ...sectionForm, kind: e.target.value as "seated" | "general" })
+                          setSectionForm({
+                            ...sectionForm,
+                            kind: e.target.value as "seated" | "general",
+                          })
                         }
                       >
                         <option value="seated">Numerado (butacas)</option>
@@ -250,7 +263,9 @@ function AdminVenuesPage() {
                       <TextInput
                         type="number"
                         value={sectionForm.sortOrder}
-                        onChange={(e) => setSectionForm({ ...sectionForm, sortOrder: Number(e.target.value) })}
+                        onChange={(e) =>
+                          setSectionForm({ ...sectionForm, sortOrder: Number(e.target.value) })
+                        }
                       />
                     </Field>
                     {sectionForm.kind === "general" ? (
@@ -258,7 +273,9 @@ function AdminVenuesPage() {
                         <TextInput
                           type="number"
                           value={sectionForm.capacity}
-                          onChange={(e) => setSectionForm({ ...sectionForm, capacity: Number(e.target.value) })}
+                          onChange={(e) =>
+                            setSectionForm({ ...sectionForm, capacity: Number(e.target.value) })
+                          }
                         />
                       </Field>
                     ) : (
@@ -272,13 +289,18 @@ function AdminVenuesPage() {
                           <TextInput
                             type="number"
                             value={sectionForm.seatRows}
-                            onChange={(e) => setSectionForm({ ...sectionForm, seatRows: Number(e.target.value) })}
+                            onChange={(e) =>
+                              setSectionForm({ ...sectionForm, seatRows: Number(e.target.value) })
+                            }
                           />
                           <TextInput
                             type="number"
                             value={sectionForm.seatsPerRow}
                             onChange={(e) =>
-                              setSectionForm({ ...sectionForm, seatsPerRow: Number(e.target.value) })
+                              setSectionForm({
+                                ...sectionForm,
+                                seatsPerRow: Number(e.target.value),
+                              })
                             }
                           />
                         </div>
@@ -288,7 +310,10 @@ function AdminVenuesPage() {
                               type="checkbox"
                               checked={sectionForm.regenerateSeats}
                               onChange={(e) =>
-                                setSectionForm({ ...sectionForm, regenerateSeats: e.target.checked })
+                                setSectionForm({
+                                  ...sectionForm,
+                                  regenerateSeats: e.target.checked,
+                                })
                               }
                             />
                             Regenerar butacas (no se permite si el sector ya tiene entradas)
@@ -304,7 +329,9 @@ function AdminVenuesPage() {
                         <TextInput
                           type="number"
                           value={sectionForm[key]}
-                          onChange={(e) => setSectionForm({ ...sectionForm, [key]: Number(e.target.value) })}
+                          onChange={(e) =>
+                            setSectionForm({ ...sectionForm, [key]: Number(e.target.value) })
+                          }
                         />
                       </Field>
                     ))}
@@ -318,7 +345,9 @@ function AdminVenuesPage() {
                       Guardar sector
                     </PillButton>
                     {sectionForm.id ? (
-                      <GhostButton onClick={() => setSectionForm(emptySection)}>Cancelar</GhostButton>
+                      <GhostButton onClick={() => setSectionForm(emptySection)}>
+                        Cancelar
+                      </GhostButton>
                     ) : null}
                     <MetaText className="inline">
                       Las butacas se regeneran automáticamente al guardar un sector numerado.

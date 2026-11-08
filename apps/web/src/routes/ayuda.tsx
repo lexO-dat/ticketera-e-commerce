@@ -77,7 +77,10 @@ function HelpPage() {
             <details key={item.q} className="group border-b border-ash py-7">
               <summary className="flex cursor-pointer items-center justify-between gap-6 text-subheading">
                 {item.q}
-                <span aria-hidden className="text-graphite transition-transform group-open:rotate-45">
+                <span
+                  aria-hidden
+                  className="text-graphite transition-transform group-open:rotate-45"
+                >
                   +
                 </span>
               </summary>

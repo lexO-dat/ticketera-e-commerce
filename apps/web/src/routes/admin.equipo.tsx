@@ -103,7 +103,9 @@ function AdminStaffPage() {
               <span className="text-body">{member.email}</span>
               <MetaText>
                 {member.fullName ?? "Sin nombre"} ·{" "}
-                {member.lastSignInAt ? `último ingreso ${shortDate(member.lastSignInAt)}` : "sin ingresos"}
+                {member.lastSignInAt
+                  ? `último ingreso ${shortDate(member.lastSignInAt)}`
+                  : "sin ingresos"}
               </MetaText>
             </div>
             <MetaText className="inline">{member.role}</MetaText>

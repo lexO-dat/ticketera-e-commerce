@@ -36,9 +36,7 @@ export function EventCard({ event }: { event: CatalogEvent }) {
         <SectionTitle as="h3" className="text-subheading">
           {event.title}
         </SectionTitle>
-        <MetaText>
-          {[event.venueName, event.city].filter(Boolean).join(" · ")}
-        </MetaText>
+        <MetaText>{[event.venueName, event.city].filter(Boolean).join(" · ")}</MetaText>
         <div className="mt-1 flex items-baseline gap-3">
           <span className="text-body">
             {soldout ? "Agotado" : event.minPrice != null ? `Desde ${money(event.minPrice)}` : "—"}

@@ -38,7 +38,10 @@ export function QueuePanel({ view, eventTitle }: { view: QueueView; eventTitle: 
         <>
           <div className="grid gap-4">
             <div className="h-1 w-full bg-linen">
-              <div className="h-1 bg-sage transition-all duration-700" style={{ width: `${progress}%` }} />
+              <div
+                className="h-1 bg-sage transition-all duration-700"
+                style={{ width: `${progress}%` }}
+              />
             </div>
             {view.state === "prequeue" ? (
               <span className="text-subheading">

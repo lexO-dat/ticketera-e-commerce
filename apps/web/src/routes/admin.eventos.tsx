@@ -103,15 +103,23 @@ function AdminEvents() {
         <SectionTitle>{form.id ? "Editar evento" : "Nuevo evento"}</SectionTitle>
         <div className="grid gap-6 md:grid-cols-2">
           <Field label="Título">
-            <TextInput value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            <TextInput
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+            />
           </Field>
           <Field label="Artista / elenco">
-            <TextInput value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} />
+            <TextInput
+              value={form.artist}
+              onChange={(e) => setForm({ ...form, artist: e.target.value })}
+            />
           </Field>
           <Field label="Categoría">
             <Select
               value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value as EventForm["category"] })}
+              onChange={(e) =>
+                setForm({ ...form, category: e.target.value as EventForm["category"] })
+              }
             >
               {CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -169,10 +177,15 @@ function AdminEvents() {
           />
         </Field>
         <div className="flex flex-wrap items-center gap-4">
-          <PillButton onClick={() => saveEvent.mutate()} disabled={saveEvent.isPending || form.title.length < 2}>
+          <PillButton
+            onClick={() => saveEvent.mutate()}
+            disabled={saveEvent.isPending || form.title.length < 2}
+          >
             {saveEvent.isPending ? "Guardando…" : "Guardar evento"}
           </PillButton>
-          {form.id ? <GhostButton onClick={() => setForm(emptyEvent)}>Cancelar edición</GhostButton> : null}
+          {form.id ? (
+            <GhostButton onClick={() => setForm(emptyEvent)}>Cancelar edición</GhostButton>
+          ) : null}
           {message ? <MetaText className="inline">{message}</MetaText> : null}
         </div>
       </section>
@@ -212,7 +225,10 @@ function AdminEvents() {
                 >
                   <span className="underline">Editar</span>
                 </GhostButton>
-                <GhostButton arrow={false} onClick={() => setOpenId(openId === event.id ? null : event.id)}>
+                <GhostButton
+                  arrow={false}
+                  onClick={() => setOpenId(openId === event.id ? null : event.id)}
+                >
                   <span className="underline">
                     {openId === event.id ? "Cerrar" : "Fechas y fila virtual"}
                   </span>
@@ -496,10 +512,17 @@ function DatesEditor({
           />
         </Field>
         <Field label="Apertura de puertas">
-          <TextInput type="datetime-local" value={doorsAt} onChange={(e) => setDoorsAt(e.target.value)} />
+          <TextInput
+            type="datetime-local"
+            value={doorsAt}
+            onChange={(e) => setDoorsAt(e.target.value)}
+          />
         </Field>
         <Field label="En venta">
-          <Select value={onSale ? "yes" : "no"} onChange={(e) => setOnSale(e.target.value === "yes")}>
+          <Select
+            value={onSale ? "yes" : "no"}
+            onChange={(e) => setOnSale(e.target.value === "yes")}
+          >
             <option value="yes">Sí</option>
             <option value="no">No</option>
           </Select>

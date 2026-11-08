@@ -10,7 +10,10 @@ export function Label({
   htmlFor?: string | undefined;
 }) {
   return (
-    <label htmlFor={htmlFor} className="mb-2 block font-roboto text-micro uppercase tracking-[0.12em] text-graphite">
+    <label
+      htmlFor={htmlFor}
+      className="mb-2 block font-roboto text-micro uppercase tracking-[0.12em] text-graphite"
+    >
       {children}
     </label>
   );

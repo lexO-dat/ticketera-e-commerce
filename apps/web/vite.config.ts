@@ -38,7 +38,10 @@ export default defineConfig(({ command }) => ({
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
       // Formulario del adquirente simulado (webpay-mock publicado en 127.0.0.1:3005).
-      "/webpay": { target: process.env["WEBPAY_URL"] ?? "http://127.0.0.1:3005", changeOrigin: true },
+      "/webpay": {
+        target: process.env["WEBPAY_URL"] ?? "http://127.0.0.1:3005",
+        changeOrigin: true,
+      },
     },
   },
   resolve: {

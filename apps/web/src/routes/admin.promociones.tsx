@@ -104,7 +104,10 @@ function AdminPromosPage() {
           </Field>
         </div>
         <div className="flex flex-wrap items-center gap-4">
-          <PillButton onClick={() => save.mutate()} disabled={save.isPending || form.code.length < 2}>
+          <PillButton
+            onClick={() => save.mutate()}
+            disabled={save.isPending || form.code.length < 2}
+          >
             Guardar código
           </PillButton>
           {form.id ? <GhostButton onClick={() => setForm(empty)}>Cancelar</GhostButton> : null}

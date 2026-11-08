@@ -7,13 +7,7 @@ import { PillLink } from "@/components/kit/PillButton";
 import { useAuth } from "@/lib/useAuth";
 
 /** Comprar requiere cuenta: muestra el muro de acceso y vuelve al flujo tras ingresar. */
-export function RequireAuth({
-  redirectTo,
-  children,
-}: {
-  redirectTo: string;
-  children: ReactNode;
-}) {
+export function RequireAuth({ redirectTo, children }: { redirectTo: string; children: ReactNode }) {
   const navigate = useNavigate();
   const { loading, session } = useAuth();
 

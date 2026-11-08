@@ -38,9 +38,7 @@ export function SectionTitle({
 }
 
 export function Lead({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <p className={cn("text-lead leading-[1.35] sm:text-subheading", className)}>{children}</p>
-  );
+  return <p className={cn("text-lead leading-[1.35] sm:text-subheading", className)}>{children}</p>;
 }
 
 export function Body({ children, className }: { children: ReactNode; className?: string }) {

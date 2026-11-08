@@ -1,5 +1,10 @@
 import { createLink } from "@tanstack/react-router";
-import { forwardRef, type ComponentProps, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import {
+  forwardRef,
+  type ComponentProps,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -30,19 +35,18 @@ export function PillButton({
   );
 }
 
-const PillAnchor = forwardRef<
-  HTMLAnchorElement,
-  ComponentPropsWithoutRef<"a"> & { dot?: boolean }
->(({ children, dot: _dot, className, ...rest }, ref) => (
-  <a
-    ref={ref}
-    {...rest}
-    className={cn(BASE, className)}
-    style={{ boxShadow: "rgba(0, 0, 0, 0.25) 0px 0px 10px 0px" }}
-  >
-    <span>{children}</span>
-  </a>
-));
+const PillAnchor = forwardRef<HTMLAnchorElement, ComponentPropsWithoutRef<"a"> & { dot?: boolean }>(
+  ({ children, dot: _dot, className, ...rest }, ref) => (
+    <a
+      ref={ref}
+      {...rest}
+      className={cn(BASE, className)}
+      style={{ boxShadow: "rgba(0, 0, 0, 0.25) 0px 0px 10px 0px" }}
+    >
+      <span>{children}</span>
+    </a>
+  ),
+);
 PillAnchor.displayName = "PillAnchor";
 
 export const PillLink = createLink(PillAnchor);
