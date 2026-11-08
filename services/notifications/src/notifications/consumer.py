@@ -3,6 +3,7 @@ exchange de tópicos `ticketera.events`, cola quorum con DLX `ticketera.dead-let
 `<cola>.dlq`, reintentos explícitos con la cabecera `x-retry-count` y backoff con jitter."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import random
@@ -27,7 +28,15 @@ EmailBuilder = Callable[[dict[str, Any]], Awaitable[Email | None]]
 
 
 class Deduper:
-    """Evita reenviar el correo de un evento ya procesado (entrega al-menos-una-vez)."""
+    """Un correo por evento aunque llegue repetido o en paralelo (entrega al-menos-una-vez).
+
+    Antes de enviar se *reserva* el evento con `SET NX` (atómico): si dos copias llegan a la vez,
+    solo una envía. Tras enviar, la reserva pasa a "sent" por `ttl_seconds`; si el envío falla de
+    forma transitoria se libera para que el reintento pueda reservarlo de nuevo.
+    """
+
+    #: Si el proceso muere con el evento reservado, la reserva vence y otro puede tomarlo.
+    CLAIM_SECONDS = 300
 
     def __init__(self, redis: Any, ttl_seconds: int) -> None:
         self.redis = redis
@@ -37,11 +46,16 @@ class Deduper:
     def key(event_id: str) -> str:
         return f"notifications:sent:{event_id}"
 
-    async def seen(self, event_id: str) -> bool:
-        return bool(await self.redis.exists(self.key(event_id)))
+    async def claim(self, event_id: str) -> bool:
+        return bool(
+            await self.redis.set(self.key(event_id), "sending", nx=True, ex=self.CLAIM_SECONDS)
+        )
 
     async def mark(self, event_id: str) -> None:
-        await self.redis.set(self.key(event_id), "1", ex=self.ttl)
+        await self.redis.set(self.key(event_id), "sent", ex=self.ttl)
+
+    async def release(self, event_id: str) -> None:
+        await self.redis.delete(self.key(event_id))
 
 
 def backoff_seconds(attempt: int, base: float = 0.2, cap: float = 10.0) -> float:
@@ -124,21 +138,28 @@ class EmailConsumer:
             return
 
         context = {"eventId": event_id, "eventType": event_type}
+        claimed = False
         try:
-            if await self.deduper.seen(event_id):
+            # Ya enviado, o lo está procesando otra copia (que se encarga también de reintentar).
+            if not await self.deduper.claim(event_id):
                 await message.ack()
                 return
+            claimed = True
             email = await self.build(event)
             if email is not None:
                 await self.mailer.send(email)
-                await self.deduper.mark(event_id)
                 log.info("notificación enviada", extra={**context, "to": mask_email(email.to)})
+            await self.deduper.mark(event_id)
             await message.ack()
         except PermanentMailError as error:
             # Reintentar no lo arregla (correo inválido, rechazo definitivo): a la DLQ.
             log.error("correo no enviable: DLQ", extra={**context, "reason": str(error)})
             await message.reject(requeue=False)
         except Exception as error:
+            if claimed:
+                # Sin Redis no se puede liberar: la reserva vence sola (CLAIM_SECONDS).
+                with contextlib.suppress(Exception):
+                    await self.deduper.release(event_id)
             await self._retry(message, context, error)
 
     async def _retry(

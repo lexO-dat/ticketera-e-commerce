@@ -153,3 +153,20 @@ async def test_agota_los_reintentos_y_va_a_la_dlq(setup):
     await setup["publish"](event("PruebaCorreo", {"to": "ana@acceptme.com"}))
     assert len(await drain_dlq(setup["channel"], setup["queue"], 1)) == 1
     assert mailer.calls == 3  # max_attempts
+
+
+async def test_reserva_atomica_un_solo_envio_con_copias_simultaneas():
+    redis = Redis.from_url(REDIS)
+    deduper = Deduper(redis, 600)
+    event_id = str(uuid.uuid4())
+    try:
+        claims = await asyncio.gather(*(deduper.claim(event_id) for _ in range(20)))
+        assert claims.count(True) == 1
+        # Falla transitoria: se libera y el reintento puede reservarlo; tras enviar, nadie más.
+        await deduper.release(event_id)
+        assert await deduper.claim(event_id)
+        await deduper.mark(event_id)
+        assert not await deduper.claim(event_id)
+    finally:
+        await redis.delete(Deduper.key(event_id))
+        await redis.aclose()
