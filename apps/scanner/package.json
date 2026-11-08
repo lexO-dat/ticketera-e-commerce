@@ -1,0 +1,24 @@
+{
+  "name": "@apps/scanner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "App de validación de entradas en puerta (RF15): cámara o código manual, check-in atómico vía gateway",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "^5.8.3",
+    "vite": "8.1.5"
+  }
+}
