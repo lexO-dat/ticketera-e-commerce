@@ -27,15 +27,15 @@ depende del **email del comprador** en el checkout: `@acceptme.com` aprueba, `@r
 (otros dominios se rechazan con `UNSUPPORTED_TEST_EMAIL`). El flujo completo con redirección funciona
 por `https://localhost:8443`.
 
-| Servicio local                | Dirección                                        | Credenciales de desarrollo                                                                                      |
-| ----------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL primaria / réplica | `127.0.0.1:5432` / `:5433`                       | `postgres` / `postgres-dev-password`; una base y un rol por servicio (`<servicio>` / `<servicio>-dev-password`) |
-| Redis primario / réplica      | `127.0.0.1:6379` / `:6380`                       | contraseña `redis-dev-password`                                                                                 |
-| RabbitMQ (AMQP / consola)     | `127.0.0.1:5672` / http://localhost:15672        | `ticketera` / `rabbitmq-dev-password`                                                                           |
-| Mailpit (SMTP / bandeja)      | `127.0.0.1:1025` / http://localhost:8025         | —                                                                                                               |
-| Nginx (borde TLS 1.3)         | https://localhost:8443 (`/api/*` → gateway)      | certificado autofirmado                                                                                         |
-| API Gateway                   | http://127.0.0.1:3000                            | —                                                                                                               |
-| webpay-mock (formulario)      | http://127.0.0.1:3005 · `/webpay/form` vía Nginx | API: `597055555532` / `webpay-mock-dev-secret-0123456789`                                                       |
+| Servicio local                | Dirección                                                                   | Credenciales de desarrollo                                                                                      |
+| ----------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL primaria / réplica | `127.0.0.1:5432` / `:5433` (roles intercambiables tras un failover, ADR-10) | `postgres` / `postgres-dev-password`; una base y un rol por servicio (`<servicio>` / `<servicio>-dev-password`) |
+| Redis primario / réplica      | `127.0.0.1:6379` / `:6380`; 3 Sentinel internos                             | contraseña `redis-dev-password`                                                                                 |
+| RabbitMQ (AMQP / consola)     | `127.0.0.1:5672` / http://localhost:15672                                   | `ticketera` / `rabbitmq-dev-password`                                                                           |
+| Mailpit (SMTP / bandeja)      | `127.0.0.1:1025` / http://localhost:8025                                    | —                                                                                                               |
+| Nginx (borde TLS 1.3)         | https://localhost:8443 (`/api/*` → gateway)                                 | certificado autofirmado                                                                                         |
+| API Gateway (2 réplicas)      | http://127.0.0.1:3000 y :3001                                               | —                                                                                                               |
+| webpay-mock (formulario)      | http://127.0.0.1:3005 · `/webpay/form` vía Nginx                            | API: `597055555532` / `webpay-mock-dev-secret-0123456789`                                                       |
 
 Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 
@@ -58,6 +58,7 @@ Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 | `services/notifications` | Correos transaccionales (Python 3.12, SMTP): cuenta, compra, entradas con QR y reembolsos         |
 | `apps/scanner`           | App de validación en puerta (https://localhost:8443/scanner/)                                     |
 | `services/webpay-mock`   | Adquirente simulado (único mock): API y formulario de Webpay Plus                                 |
+| `tools/failover-test`    | Prueba de failover (ASR01): sondas por Nginx mientras se botan componentes                        |
 | `tools/queue-simulator`  | Bots que hacen fila, reservan y pagan; verifica cupos, órdenes, ledger y 0 sobreventas            |
 | `infra/`                 | `docker-compose.yml`, Postgres (réplica síncrona), Nginx                                          |
 
@@ -68,3 +69,6 @@ Se sobrescriben con `infra/.env` (ver `infra/.env.example`).
 | `npm run lint:backend`                            | ESLint de `packages`, `services`, `tools`, `scripts`                                              |
 | `npm run build:backend`                           | Bundle de cada servicio                                                                           |
 | `npm run infra:up` / `infra:down` / `infra:reset` | Levanta, detiene o borra la infraestructura local                                                 |
+| `npm run simulate:queue -- --bots 10000`          | Prueba de carga: bots que hacen fila, reservan y pagan (ver `tools/queue-simulator`)              |
+| `npm run test:failover -- --scenario all`         | Bota réplicas, gateway, Redis y Postgres y mide la ventana de error (ver `tools/failover-test`)   |
+| `npm run infra:pg-rejoin`                         | Tras un failover de Postgres, vuelve a sumar el nodo caído como réplica                           |

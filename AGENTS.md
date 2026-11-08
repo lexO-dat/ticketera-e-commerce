@@ -112,6 +112,7 @@ flowchart LR
 | ADR-07 | Adquirente detrás de un adapter; Webpay como mock por dominio de email | [`docs/adr/ADR-07`](docs/adr/ADR-07-adquirente-mock.md) |
 | ADR-08 | Sesión web como BFF: tokens en cookies HttpOnly, nunca en el navegador | [`docs/adr/ADR-08`](docs/adr/ADR-08-sesion-web-bff.md) |
 | ADR-09 | Imágenes del catálogo en Postgres, re-codificadas a WebP y cacheadas en el borde | [`docs/adr/ADR-09`](docs/adr/ADR-09-media-en-postgres.md) |
+| ADR-10 | Failover: monitor propio que promueve la réplica de Postgres y aísla la vieja; Redis Sentinel; gateway ×2 tras Nginx | [`docs/adr/ADR-10`](docs/adr/ADR-10-failover-postgres-redis.md) |
 
 ## 4. Flujo de compra (vista de procesos)
 
