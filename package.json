@@ -17,7 +17,8 @@
     "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "infra:reset": "docker compose -f infra/docker-compose.yml down -v",
-    "new:service": "node scripts/new-service.mjs"
+    "new:service": "node scripts/new-service.mjs",
+    "simulate:queue": "npm run simulate -w @tools/queue-simulator --"
   },
   "overrides": {
     "rolldown": "1.2.1"

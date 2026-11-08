@@ -1,0 +1,16 @@
+{
+  "name": "@tools/queue-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bots de carga para la fila virtual y la reserva: verifica 0 sobreventas y cupos respetados",
+  "scripts": {
+    "simulate": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.8.3"
+  }
+}
