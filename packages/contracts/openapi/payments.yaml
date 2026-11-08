@@ -1,0 +1,210 @@
+openapi: 3.1.0
+info:
+  title: payments-service
+  version: 1.0.0
+  description: >
+    Pagos (docs/services/payments.md): intentos con máquina de estados, idempotencia, adapter del
+    adquirente (ADR-07), ledger de doble entrada, reembolsos y conciliación. Público vía gateway:
+    `/payments/return` (retorno del navegador), `/payments/*` → `/v1/*`, `/payments/admin/*` solo
+    admin. `/internal/*` solo entre servicios (`x-internal-token`).
+servers:
+  - url: http://localhost:3006
+security: [{ bearer: [] }]
+paths:
+  /health/live:
+    $ref: "./common.yaml#/paths/~1health~1live"
+  /health/ready:
+    $ref: "./common.yaml#/paths/~1health~1ready"
+  /internal/payments:
+    post:
+      operationId: createPaymentIntent
+      summary: "(orders) Crea el intento de una orden; el monto se lee de orders"
+      security: []
+      parameters: [{ $ref: "./common.yaml#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [orderId]
+              properties:
+                orderId: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Intento creado (o el intento vivo de la orden)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Payment"
+                  - type: object
+                    properties:
+                      redirectUrl: { type: [string, "null"], format: uri }
+        "409":
+          description: "ORDER_NOT_PAYABLE, ORDER_EXPIRED, AMOUNT_OUT_OF_RANGE, TOO_MANY_ATTEMPTS, IDEMPOTENCY_IN_PROGRESS"
+          content:
+            application/problem+json:
+              schema: { $ref: "./common.yaml#/components/schemas/Problem" }
+        "422": { $ref: "./common.yaml#/components/responses/Problem" }
+        "503": { $ref: "./common.yaml#/components/responses/Problem" }
+  /internal/payments/{id}/refunds:
+    post:
+      operationId: refundPaymentInternal
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - { $ref: "./common.yaml#/components/parameters/IdempotencyKey" }
+      requestBody: { $ref: "#/components/requestBodies/Refund" }
+      responses:
+        "201":
+          description: Reembolso hecho
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+  /internal/payments/by-order/{id}:
+    get:
+      operationId: paymentsByOrder
+      security: []
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Intentos de la orden }
+  /internal/payments/reconcile:
+    post:
+      operationId: reconcileNow
+      summary: Ejecuta ahora el expirador y el conciliador
+      security: []
+      responses:
+        "200": { description: Cantidades procesadas }
+  /v1/return:
+    get:
+      operationId: providerReturn
+      summary: return_url del adquirente; commit una sola vez y redirige a la orden
+      security: []
+      parameters:
+        - { name: token_ws, in: query, schema: { type: string } }
+        - { name: TBK_TOKEN, in: query, schema: { type: string } }
+        - { name: TBK_ORDEN_COMPRA, in: query, schema: { type: string } }
+        - { name: TBK_ID_SESION, in: query, schema: { type: string } }
+      responses:
+        "303":
+          description: "A `<web>/orden/<código>?pago=aprobado|rechazado|anulado|expirado|pendiente`"
+  /v1/payments/{id}:
+    get:
+      operationId: getPayment
+      summary: Estado del intento (dueño o admin), sin datos sensibles
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Intento
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/admin/payments:
+    get:
+      operationId: adminPaymentsByOrder
+      parameters:
+        - { name: orderId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Intentos }
+  /v1/admin/payments/{id}/refunds:
+    post:
+      operationId: adminRefund
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - { $ref: "./common.yaml#/components/parameters/IdempotencyKey" }
+      requestBody: { $ref: "#/components/requestBodies/Refund" }
+      responses:
+        "201":
+          description: Reembolso hecho
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "409": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/admin/ledger/check:
+    get:
+      operationId: ledgerCheck
+      summary: Cierre del ledger (cada asiento suma 0) y saldos por cuenta
+      responses:
+        "200":
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [balanced, unbalancedTransactions, balances]
+                properties:
+                  balanced: { type: boolean }
+                  unbalancedTransactions: { type: array, items: { type: string, format: uuid } }
+                  balances: { type: object, additionalProperties: { type: string } }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT (EdDSA)
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    Payment:
+      type: object
+      required:
+        [
+          id,
+          orderId,
+          orderCode,
+          userId,
+          amount,
+          status,
+          provider,
+          buyOrder,
+          refundedAmount,
+          expiresAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        orderCode: { type: string }
+        userId: { type: string, format: uuid }
+        amount: { $ref: "./common.yaml#/components/schemas/Money" }
+        status:
+          type: string
+          enum:
+            [
+              CREATED,
+              PENDING,
+              AUTHORIZED,
+              FAILED,
+              CANCELED,
+              EXPIRED,
+              UNKNOWN,
+              REFUND_PENDING,
+              REFUNDED,
+              PARTIALLY_REFUNDED,
+            ]
+        provider: { type: string }
+        buyOrder: { type: string, maxLength: 26 }
+        authorizationCode: { type: [string, "null"] }
+        cardLast4: { type: [string, "null"], description: "Únicos datos de tarjeta guardados" }
+        failureReason: { type: [string, "null"] }
+        refundedAmount: { $ref: "./common.yaml#/components/schemas/Money" }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+  requestBodies:
+    Refund:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [reason]
+            properties:
+              amount: { type: integer, minimum: 1, description: "Omitido = saldo completo" }
+              reason: { type: string, minLength: 3, maxLength: 120 }
