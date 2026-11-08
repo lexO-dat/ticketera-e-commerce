@@ -44,6 +44,7 @@ async function main(): Promise<void> {
     catalog: createCatalogClient({ baseUrl: config.CATALOG_URL, logger }),
     verifyToken: createTokenVerifier({ jwksUrl: config.JWKS_URL }),
     verifyAdmission: createAdmissionVerifier({ jwksUrl: config.QUEUE_JWKS_URL }),
+    internalToken: config.INTERNAL_API_TOKEN,
     reservationTtlSeconds: config.RESERVATION_TTL_SECONDS,
     availabilityCacheMs: config.AVAILABILITY_CACHE_MS,
     readinessChecks: {

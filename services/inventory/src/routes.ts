@@ -1,6 +1,6 @@
 import { AppError } from "@shared/commons";
 import { ADMISSION_HEADER, type AdmissionVerifier, type AuthGuards } from "@shared/commons/auth";
-import { parseInput } from "@shared/commons/http";
+import { internalGuard, parseInput } from "@shared/commons/http";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { MicroCache } from "./micro-cache.js";
@@ -35,9 +35,11 @@ export function registerRoutes(
     guards: AuthGuards;
     verifyAdmission: AdmissionVerifier;
     cache: MicroCache;
+    internalToken: string;
   },
 ): void {
   const { reservations, guards, verifyAdmission, cache } = deps;
+  const internal = { preHandler: internalGuard(deps.internalToken) };
   const user = { preHandler: guards.required() };
   const admin = { preHandler: guards.required("admin") };
 
@@ -101,6 +103,41 @@ export function registerRoutes(
       await cache.invalidate(`event:${reservation.eventId}`, `seats:${reservation.eventDateId}`);
     }
     return reply.status(204).send();
+  });
+
+  // ---------- Interno (orders: saga de compra) ----------
+
+  const ids = z.array(z.guid()).min(1).max(20);
+
+  app.get("/internal/reservations/:id", internal, async (request) => {
+    const { id } = parseInput(schemas.id, request.params);
+    const reservation = await reservations.internalGet(id);
+    if (!reservation) throw AppError.notFound("La reserva no existe");
+    return reservation;
+  });
+
+  app.post("/internal/reservations/sell", internal, async (request, reply) => {
+    const body = parseInput(
+      z.strictObject({ orderId: z.guid(), reservationIds: ids }),
+      request.body,
+    );
+    await reservations.sell(body.orderId, body.reservationIds, request.id);
+    return reply.status(204).send();
+  });
+
+  app.post("/internal/reservations/release", internal, async (request) => {
+    const body = parseInput(
+      z.strictObject({ reservationIds: ids, reason: z.string().regex(/^[A-Z_]{3,40}$/) }),
+      request.body,
+    );
+    return {
+      released: await reservations.releaseMany(body.reservationIds, body.reason, request.id),
+    };
+  });
+
+  app.post("/internal/reservations/return", internal, async (request) => {
+    const body = parseInput(z.strictObject({ orderId: z.guid() }), request.body);
+    return { returned: await reservations.returnSold(body.orderId, request.id) };
   });
 
   // ---------- Administración ----------

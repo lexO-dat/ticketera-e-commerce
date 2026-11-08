@@ -11,6 +11,8 @@ const schema = baseServiceEnv.extend({
   /** JWKS de queue (tokens de admisión de la fila, ADR-06). */
   QUEUE_JWKS_URL: z.url(),
   CATALOG_URL: z.url(),
+  /** Secreto compartido de los endpoints /internal (orders). */
+  INTERNAL_API_TOKEN: z.string().min(24),
   /** ADR-03: reserva exclusiva de 10 minutos. */
   RESERVATION_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(600),
   /** Período del barrido de reservas vencidas. */

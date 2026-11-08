@@ -142,6 +142,67 @@ paths:
       responses:
         "204": { description: Liberada }
         "404": { $ref: "./common.yaml#/components/responses/Problem" }
+  /internal/reservations/{id}:
+    get:
+      operationId: internalReservation
+      summary: "(orders) reserva con dueño y orden; requiere x-internal-token"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Reserva }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
+  /internal/reservations/sell:
+    post:
+      operationId: sellReservations
+      summary: "(orders) convierte reservas en venta, todo o nada; idempotente por orden"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, reservationIds]
+              properties:
+                orderId: { type: string, format: uuid }
+                reservationIds: { type: array, items: { type: string, format: uuid } }
+      responses:
+        "204": { description: Vendidas }
+        "409":
+          description: "RESERVATION_NOT_ACTIVE: alguna venció (pago tardío → reembolso)"
+          content:
+            application/problem+json:
+              schema: { $ref: "./common.yaml#/components/schemas/Problem" }
+  /internal/reservations/release:
+    post:
+      operationId: releaseReservations
+      summary: "(orders) libera reservas activas (pago rechazado / vencido)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reservationIds, reason]
+              properties:
+                reservationIds: { type: array, items: { type: string, format: uuid } }
+                reason: { type: string, pattern: "^[A-Z_]{3,40}$" }
+      responses:
+        "200": { description: Cantidad liberada }
+  /internal/reservations/return:
+    post:
+      operationId: returnSold
+      summary: "(orders) orden reembolsada: lo vendido vuelve a la venta"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId]
+              properties:
+                orderId: { type: string, format: uuid }
+      responses:
+        "200": { description: Cantidad devuelta }
   /v1/admin/audit/events/{eventId}:
     get:
       operationId: auditEvent

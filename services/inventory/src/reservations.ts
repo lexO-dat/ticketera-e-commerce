@@ -388,6 +388,165 @@ export function createReservationService(options: {
       });
     },
 
+    /** Vista interna (orders): incluye el dueño y la orden asociada. */
+    async internalGet(id: string) {
+      const dto = await loadDto(pool, id);
+      if (!dto) return undefined;
+      const extra = await pool.query<{ user_id: string; order_id: string | null }>(
+        "select user_id, order_id from reservations where id = $1",
+        [id],
+      );
+      return { ...dto, userId: extra.rows[0]!.user_id, orderId: extra.rows[0]!.order_id };
+    },
+
+    /**
+     * Convierte reservas en venta, todo o nada (saga de compra, paso 5). Idempotente por orden:
+     * repetir con la misma orden no cambia nada. Falla si alguna reserva ya no está vigente.
+     */
+    async sell(orderId: string, reservationIds: string[], correlationId?: string): Promise<void> {
+      const ids = [...new Set(reservationIds)];
+      await withTransaction(pool, async (client) => {
+        const types = await client.query<{ ticket_type_id: string }>(
+          "select distinct ticket_type_id from reservations where id = any($1::uuid[]) order by ticket_type_id",
+          [ids],
+        );
+        // Orden de bloqueo estable (inventario por id, luego reservas): sin deadlocks.
+        for (const { ticket_type_id } of types.rows) await lockInventory(client, ticket_type_id);
+        const rows = await client.query<{
+          id: string;
+          status: string;
+          order_id: string | null;
+          expired: boolean;
+          ticket_type_id: string;
+          quantity: number;
+        }>(
+          `select id, status, order_id, expires_at <= now() as expired, ticket_type_id, quantity
+           from reservations where id = any($1::uuid[]) for update`,
+          [ids],
+        );
+        if (rows.rows.length !== ids.length) throw AppError.notFound("Alguna reserva no existe");
+        for (const row of rows.rows) {
+          if (row.status === "SOLD" && row.order_id === orderId) continue;
+          if (row.status !== "ACTIVE" || row.expired) {
+            throw conflict(
+              "RESERVATION_NOT_ACTIVE",
+              "Una de las reservas venció o ya no está disponible",
+            );
+          }
+        }
+        for (const row of rows.rows) {
+          if (row.status === "SOLD") continue;
+          await client.query(
+            "update reservations set status = 'SOLD', order_id = $2, finished_at = now() where id = $1",
+            [row.id, orderId],
+          );
+          await client.query(
+            `update ticket_inventory set reserved = reserved - $2, sold = sold + $2, updated_at = now()
+             where ticket_type_id = $1`,
+            [row.ticket_type_id, row.quantity],
+          );
+          await enqueueOutbox(
+            client,
+            createEvent({
+              type: "ReservaVendida",
+              source: SOURCE,
+              aggregateId: row.id,
+              correlationId,
+              data: { reservationId: row.id, orderId },
+            }),
+          );
+        }
+      });
+    },
+
+    /** Liberación por la saga (pago rechazado, cancelado o vencido): inmediata. */
+    async releaseMany(
+      reservationIds: string[],
+      reason: string,
+      correlationId?: string,
+    ): Promise<number> {
+      let released = 0;
+      for (const id of [...new Set(reservationIds)]) {
+        const current = await pool.query<{ ticket_type_id: string }>(
+          "select ticket_type_id from reservations where id = $1",
+          [id],
+        );
+        const row = current.rows[0];
+        if (!row) continue;
+        await withTransaction(pool, async (client) => {
+          await lockInventory(client, row.ticket_type_id);
+          const done = await client.query<{ quantity: number }>(
+            `update reservations set status = 'RELEASED', release_reason = $2, finished_at = now()
+             where id = $1 and status = 'ACTIVE' returning quantity`,
+            [id, reason],
+          );
+          const quantity = done.rows[0]?.quantity;
+          if (quantity === undefined) return;
+          released++;
+          await client.query(
+            "update reservation_seats set holding = false where reservation_id = $1",
+            [id],
+          );
+          await client.query(
+            "update ticket_inventory set reserved = reserved - $2, updated_at = now() where ticket_type_id = $1",
+            [row.ticket_type_id, quantity],
+          );
+          await enqueueOutbox(
+            client,
+            createEvent({
+              type: "ReservaLiberada",
+              source: SOURCE,
+              aggregateId: id,
+              correlationId,
+              data: { reservationId: id, reason },
+            }),
+          );
+        });
+      }
+      return released;
+    },
+
+    /** Orden reembolsada: lo vendido vuelve a estar disponible (butacas incluidas). */
+    async returnSold(orderId: string, correlationId?: string): Promise<number> {
+      return withTransaction(pool, async (client) => {
+        const types = await client.query<{ ticket_type_id: string }>(
+          "select distinct ticket_type_id from reservations where order_id = $1 and status = 'SOLD' order by ticket_type_id",
+          [orderId],
+        );
+        for (const { ticket_type_id } of types.rows) await lockInventory(client, ticket_type_id);
+        const returned = await client.query<{
+          id: string;
+          ticket_type_id: string;
+          quantity: number;
+        }>(
+          `update reservations set status = 'RELEASED', release_reason = 'REFUNDED', finished_at = now()
+           where order_id = $1 and status = 'SOLD' returning id, ticket_type_id, quantity`,
+          [orderId],
+        );
+        for (const row of returned.rows) {
+          await client.query(
+            "update reservation_seats set holding = false where reservation_id = $1",
+            [row.id],
+          );
+          await client.query(
+            "update ticket_inventory set sold = sold - $2, updated_at = now() where ticket_type_id = $1",
+            [row.ticket_type_id, row.quantity],
+          );
+          await enqueueOutbox(
+            client,
+            createEvent({
+              type: "ReservaLiberada",
+              source: SOURCE,
+              aggregateId: row.id,
+              correlationId,
+              data: { reservationId: row.id, reason: "REFUNDED" },
+            }),
+          );
+        }
+        return returned.rows.length;
+      });
+    },
+
     async mine(userId: string, eventDateId?: string): Promise<ReservationDto[]> {
       const result = await pool.query<{ id: string }>(
         `select id from reservations

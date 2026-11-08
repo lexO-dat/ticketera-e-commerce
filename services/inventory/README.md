@@ -15,7 +15,8 @@ Público vía gateway: `/inventory/*` → `/v1/*`.
 | Catálogo            | Proyección local (`event_projection`, `ticket_inventory`) actualizada con `EventoActualizado` / `EventoEliminado` (inbox, orden por `occurredAt`); si falta, se completa leyendo catalog. Las butacas se validan contra el plano de catalog |
 | Lecturas públicas   | Disponibilidad por tipo de entrada y butacas ocupadas con micro-caché de 1 s en Redis; la reserva siempre decide en la BD                                                                                                                   |
 | Auditoría           | `GET /v1/admin/audit/events/:id` (admin): sobreventa, butacas duplicadas y deriva de contadores. La usa el simulador                                                                                                                        |
-| Eventos             | Outbox: `ReservaCreada`, `ReservaLiberada` (`USER` / `EXPIRED`). `ReservaVendida` llega con orders (Fase 5)                                                                                                                                 |
+| Saga (orders)       | `/internal/reservations/*` con `x-internal-token`: consultar, **vender todo o nada** (idempotente por orden; falla si alguna venció → reembolso), liberar por pago fallido y devolver lo vendido tras un reembolso                          |
+| Eventos             | Outbox: `ReservaCreada`, `ReservaLiberada` (`USER` / `EXPIRED` / `PAYMENT_FAILED` / `REFUNDED`…), `ReservaVendida`                                                                                                                          |
 
 ```bash
 npm run infra:up                      # ya incluye inventory (2 réplicas)

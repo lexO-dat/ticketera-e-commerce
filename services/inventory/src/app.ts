@@ -16,6 +16,7 @@ export interface AppDependencies {
   catalog: CatalogClient;
   verifyToken: TokenVerifier;
   verifyAdmission: AdmissionVerifier;
+  internalToken: string;
   reservationTtlSeconds?: number;
   availabilityCacheMs?: number;
   cachePrefix?: string;
@@ -44,6 +45,7 @@ export function buildApp(deps: AppDependencies): {
     reservations,
     guards: authGuards(deps.verifyToken),
     verifyAdmission: deps.verifyAdmission,
+    internalToken: deps.internalToken,
     cache: createMicroCache({
       redis: deps.redis,
       ttlMs: deps.availabilityCacheMs ?? 1_000,

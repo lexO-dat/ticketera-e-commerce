@@ -180,6 +180,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("inventory (integración)", () => {
       catalog,
       verifyToken: createTokenVerifier({ getKey: localKeySet(accessJwks) }),
       verifyAdmission: createAdmissionVerifier({ getKey: localKeySet(queueJwks) }),
+      internalToken: "internal-test-token-0123456789abcdef",
       availabilityCacheMs: 0,
       cachePrefix: `${schema}:`,
     }));
@@ -382,6 +383,77 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("inventory (integración)", () => {
     // Revocado (ventana vencida o compra completada): ya no sirve.
     await redis.del(admissionJtiKey(eventId, valid.jti));
     expect((await reserve(user, body, valid.token)).statusCode).toBe(403);
+  });
+
+  it("saga: venta todo o nada, idempotente por orden, y devolución tras reembolso", async () => {
+    const { eventId, dateId, seated, general, seats } = makeEvent({ generalCapacity: 10 });
+    const user = newId();
+    const internal = { "x-internal-token": "internal-test-token-0123456789abcdef" };
+    const a = (await reserve(user, { ticketTypeId: seated, seatIds: [seats[0]!] })).json();
+    const b = (await reserve(user, { ticketTypeId: general, quantity: 2 })).json();
+    const call = (url: string, payload: object, headers: Record<string, string> = internal) =>
+      app.inject({ method: "POST", url, payload, headers });
+
+    expect(
+      (await call("/internal/reservations/sell", { orderId: newId(), reservationIds: [a.id] }, {}))
+        .statusCode,
+    ).toBe(404);
+    const detail = await app.inject({ url: `/internal/reservations/${a.id}`, headers: internal });
+    expect(detail.json()).toMatchObject({ userId: user, status: "ACTIVE", seatIds: [seats[0]] });
+
+    // Una reserva vencida hace fallar la venta completa (no se vende la otra).
+    await pool.query(
+      "update reservations set expires_at = now() - interval '1 second' where id = $1",
+      [b.id],
+    );
+    const failed = await call("/internal/reservations/sell", {
+      orderId: newId(),
+      reservationIds: [a.id, b.id],
+    });
+    expect(failed.statusCode).toBe(409);
+    expect(failed.json().reason).toBe("RESERVATION_NOT_ACTIVE");
+    expect((await reservations.get(a.id))!.status).toBe("ACTIVE");
+
+    const orderId = newId();
+    expect(
+      (await call("/internal/reservations/sell", { orderId, reservationIds: [a.id] })).statusCode,
+    ).toBe(204);
+    expect(
+      (await call("/internal/reservations/sell", { orderId, reservationIds: [a.id] })).statusCode,
+    ).toBe(204);
+    expect((await reservations.get(a.id))!.status).toBe("SOLD");
+    const sold = (await audit(eventId)).ticketTypes.find(
+      (t: { ticketTypeId: string }) => t.ticketTypeId === seated,
+    );
+    expect(sold).toMatchObject({ sold: 1, reserved: 0 });
+    expect((await audit(eventId)).ok).toBe(true);
+    // La butaca vendida sigue ocupada aunque la reserva "venza".
+    const taken = (await app.inject({ url: `/v1/availability/dates/${dateId}/seats` })).json();
+    expect(taken.unavailableSeatIds).toContain(seats[0]);
+
+    const c = (await reserve(user, { ticketTypeId: general, quantity: 1 })).json();
+    const released = await call("/internal/reservations/release", {
+      reservationIds: [c.id],
+      reason: "PAYMENT_FAILED",
+    });
+    expect(released.json()).toEqual({ released: 1 });
+
+    expect((await call("/internal/reservations/return", { orderId })).json()).toEqual({
+      returned: 1,
+    });
+    expect(
+      (await app.inject({ url: `/v1/availability/dates/${dateId}/seats` })).json()
+        .unavailableSeatIds,
+    ).not.toContain(seats[0]);
+    expect(
+      (await reserve(newId(), { ticketTypeId: seated, seatIds: [seats[0]!] })).statusCode,
+    ).toBe(201);
+    expect((await audit(eventId)).ok).toBe(true);
+    const { rows } = await pool.query(
+      "select count(*)::int as n from outbox where type = 'ReservaVendida' and aggregate_id = $1",
+      [a.id],
+    );
+    expect(rows[0].n).toBe(1);
   });
 
   it("aplica los cambios de catalog en orden y deja de vender lo eliminado", async () => {
