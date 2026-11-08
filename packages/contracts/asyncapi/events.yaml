@@ -475,6 +475,11 @@ components:
                         eventId: { type: [string, "null"], format: uuid }
                         eventDateId: { type: [string, "null"], format: uuid }
                         seatIds: { type: array, items: { type: string, format: uuid } }
+                        attributes:
+                          {
+                            type: object,
+                            description: "Datos del ItemVendible (startsAt, venueName, sectionName…)",
+                          }
     OrdenCancelada:
       name: OrdenCancelada
       title: "OrdenCancelada v1"
@@ -584,6 +589,15 @@ components:
                 properties:
                   orderId: { type: string, format: uuid }
                   ticketIds: { type: array, items: { type: string, format: uuid } }
+                  orderCode: { type: string }
+                  userId: { type: string, format: uuid }
+                  buyerName: { type: string }
+                  buyerEmail:
+                    {
+                      type: string,
+                      format: email,
+                      description: "notifications envía las entradas a este correo",
+                    }
     EntradaValidada:
       name: EntradaValidada
       title: "EntradaValidada v1"
@@ -602,6 +616,9 @@ components:
                 properties:
                   ticketId: { type: string, format: uuid }
                   validatedAt: { type: string, format: date-time }
+                  orderId: { type: string, format: uuid }
+                  eventDateId: { type: string, format: uuid }
+                  gate: { type: [string, "null"] }
     UsuarioRegistrado:
       name: UsuarioRegistrado
       title: "UsuarioRegistrado v1"

@@ -60,4 +60,5 @@ export const HttpServices = [
   "webpay-mock",
   "payments",
   "orders",
+  "tickets",
 ] as const;

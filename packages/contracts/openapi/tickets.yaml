@@ -1,0 +1,132 @@
+openapi: 3.1.0
+info:
+  title: tickets-service
+  version: 1.0.0
+  description: >
+    Entradas digitales (RF11, RF12, RF15): emisión asíncrona al confirmarse la orden, QR firmado
+    con EdDSA (verificable con el JWKS) y validación en puerta con marcado atómico. Público vía
+    gateway: `/tickets/*` → `/v1/*`.
+servers:
+  - url: http://localhost:3008
+security: [{ bearer: [] }]
+paths:
+  /health/live:
+    $ref: "./common.yaml#/paths/~1health~1live"
+  /health/ready:
+    $ref: "./common.yaml#/paths/~1health~1ready"
+  /.well-known/jwks.json:
+    get:
+      operationId: ticketJwks
+      summary: Clave pública que firma los QR
+      security: []
+      responses:
+        "200": { description: JWKS }
+  /v1/tickets:
+    get:
+      operationId: myTickets
+      summary: Entradas del usuario (con el contenido del QR)
+      parameters:
+        - { name: orderCode, in: query, schema: { type: string, pattern: "^TK-[0-9A-Z]{8}$" } }
+      responses:
+        "200":
+          description: Entradas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Ticket" } }
+  /v1/tickets/{id}:
+    get:
+      operationId: getTicket
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Entrada (solo el dueño o admin)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+        "404": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/checkin:
+    post:
+      operationId: checkin
+      summary: Valida una entrada en puerta (roles staff, organizer o admin); marcado atómico
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [eventDateId]
+              properties:
+                qr: { type: string, description: "Contenido del QR (token firmado)" }
+                code: { type: string, description: "Código impreso, si el QR no se puede leer" }
+                eventDateId: { type: string, format: uuid }
+                gate: { type: string, maxLength: 40 }
+      responses:
+        "200":
+          description: Resultado (también se registra cuando no se acepta)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result, ticket, checkedInAt]
+                properties:
+                  result:
+                    type: string
+                    enum: [ACCEPTED, ALREADY_USED, VOIDED, WRONG_EVENT, INVALID]
+                  ticket:
+                    oneOf: [{ $ref: "#/components/schemas/Ticket" }, { type: "null" }]
+                  checkedInAt: { type: [string, "null"], format: date-time }
+        "403": { $ref: "./common.yaml#/components/responses/Problem" }
+  /v1/checkin/dates/{dateId}/stats:
+    get:
+      operationId: checkinStats
+      parameters:
+        - { name: dateId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Conteo en vivo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eventDateId: { type: string, format: uuid }
+                  issued: { type: integer }
+                  checkedIn: { type: integer }
+                  voided: { type: integer }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT (EdDSA)
+  schemas:
+    Ticket:
+      type: object
+      required:
+        [id, code, orderId, orderCode, holderName, eventId, eventDateId, name, status, issuedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, pattern: "^[0-9A-Z]{12}$" }
+        orderId: { type: string, format: uuid }
+        orderCode: { type: string }
+        holderName: { type: string }
+        eventId: { type: string, format: uuid }
+        eventDateId: { type: string, format: uuid }
+        name: { type: string }
+        startsAt: { type: [string, "null"], format: date-time }
+        venueName: { type: [string, "null"] }
+        sectionName: { type: [string, "null"] }
+        seatLabel: { type: [string, "null"] }
+        status: { type: string, enum: [ISSUED, CHECKED_IN, VOIDED] }
+        checkedInAt: { type: [string, "null"], format: date-time }
+        issuedAt: { type: string, format: date-time }
+        qr:
+          {
+            type: string,
+            description: "Token EdDSA para el QR; ausente si la entrada está anulada",
+          }

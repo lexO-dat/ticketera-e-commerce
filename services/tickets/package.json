@@ -1,0 +1,31 @@
+{
+  "name": "@services/tickets",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Entradas digitales: emisión asíncrona con QR firmado (EdDSA), historial y check-in atómico",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@shared/commons": "*",
+    "amqplib": "^2.2.1",
+    "fastify": "^5.12.8",
+    "jose": "^6.2.15",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "@types/pg": "^8.23.1",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.8.3",
+    "vitest": "^5.1.0"
+  }
+}
