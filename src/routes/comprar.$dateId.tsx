@@ -6,13 +6,7 @@ import { PublicLayout } from "@/components/site/PublicLayout";
 import { RequireAuth } from "@/components/site/RequireAuth";
 import { SeatMap, type MapSeat } from "@/components/site/SeatMap";
 import { QueuePanel, type QueueView } from "@/components/site/QueuePanel";
-import {
-  Caption,
-  DisplayHeading,
-  Hairline,
-  MetaText,
-  SectionTitle,
-} from "@/components/kit/Text";
+import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/components/kit/Text";
 import { GhostButton, PillButton } from "@/components/kit/PillButton";
 import { getSeatMap } from "@/lib/catalog.functions";
 import { reserveTickets } from "@/lib/inventory.functions";
@@ -152,7 +146,9 @@ function PurchasePage() {
             : result.message,
         );
         if (result.conflicts.length > 0) {
-          setSelected((prev) => prev.filter((s) => !result.conflicts.some((c) => c.includes(s.id))));
+          setSelected((prev) =>
+            prev.filter((s) => !result.conflicts.some((c) => c.includes(s.id))),
+          );
         }
         await mapQuery.refetch();
         setBusy(false);
@@ -184,6 +180,8 @@ function PurchasePage() {
           venueName: data.date.venue?.name ?? "",
           sectionName: section?.name ?? ticket.name,
           seatLabel: seats.length > 0 ? `Butacas ${seats.join(", ")}`.slice(0, 80) : null,
+          productSlug: null,
+          imageUrl: null,
           quantity: reservation.quantity,
           unitPrice: ticket.price,
           unitFee: ticket.fee,
@@ -283,7 +281,8 @@ function PurchasePage() {
                       <div className="grid gap-1">
                         <span className="text-subheading">{section.name}</span>
                         <MetaText>
-                          {money(ticket.price)} + {money(ticket.fee)} cargo · {remaining} disponibles
+                          {money(ticket.price)} + {money(ticket.fee)} cargo · {remaining}{" "}
+                          disponibles
                         </MetaText>
                       </div>
                       <div className="flex items-center gap-4">

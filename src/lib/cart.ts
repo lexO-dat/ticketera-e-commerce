@@ -20,6 +20,9 @@ export type CartItem = {
   venueName: string;
   sectionName: string;
   seatLabel: string | null;
+  /** Productos de la tienda: ficha y foto (las entradas no los usan). */
+  productSlug: string | null;
+  imageUrl: string | null;
   quantity: number;
   unitPrice: number;
   unitFee: number;
@@ -41,6 +44,8 @@ function fromServer(item: ServerCartItem): CartItem {
     venueName: item.display?.venueName ?? "",
     sectionName: item.display?.subtitle ?? "",
     seatLabel: item.display?.seatLabel ?? null,
+    productSlug: item.display?.productSlug ?? null,
+    imageUrl: item.display?.imageUrl ?? null,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
     unitFee: item.unitFee,
@@ -63,6 +68,8 @@ function toServer(item: CartItem): ServerCartItem {
       ...(item.startsAt ? { startsAt: item.startsAt } : {}),
       ...(item.venueName ? { venueName: item.venueName } : {}),
       ...(item.seatLabel ? { seatLabel: item.seatLabel } : {}),
+      ...(item.productSlug ? { productSlug: item.productSlug } : {}),
+      ...(item.imageUrl ? { imageUrl: item.imageUrl } : {}),
     },
     unitPrice: item.unitPrice,
     unitFee: item.unitFee,
@@ -72,6 +79,43 @@ function toServer(item: CartItem): ServerCartItem {
 function notify() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(EVENT));
 }
+
+/** Línea de un producto de la tienda (la clave es estable: volver a agregarlo cambia la cantidad). */
+export function productCartItem(
+  product: {
+    id: string;
+    slug: string;
+    name: string;
+    price: number;
+    fee: number;
+    imageUrl: string | null;
+    eventId: string | null;
+  },
+  quantity: number,
+): CartItem {
+  return {
+    key: `product:${product.id}`,
+    kind: "product",
+    itemId: product.id,
+    reservationId: null,
+    // Sin evento ni función: un producto no pasa por la fila ni por inventory.
+    eventId: "",
+    eventSlug: "",
+    eventTitle: product.name,
+    eventDateId: "",
+    startsAt: "",
+    venueName: "",
+    sectionName: "Tienda",
+    seatLabel: null,
+    productSlug: product.slug,
+    imageUrl: product.imageUrl,
+    quantity,
+    unitPrice: product.price,
+    unitFee: product.fee,
+  };
+}
+
+export const isProduct = (item: CartItem) => item.kind === "product";
 
 export function cartTotals(items: CartItem[]) {
   const subtotal = items.reduce((acc, i) => acc + i.unitPrice * i.quantity, 0);

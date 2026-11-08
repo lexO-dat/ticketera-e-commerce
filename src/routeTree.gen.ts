@@ -31,6 +31,8 @@ import { Route as ComprarDateIdRouteImport } from './routes/comprar.$dateId'
 import { Route as EventoSlugRouteImport } from './routes/evento.$slug'
 import { Route as OrdenIndexRouteImport } from './routes/orden.index'
 import { Route as OrdenCodeRouteImport } from './routes/orden.$code'
+import { Route as TiendaIndexRouteImport } from './routes/tienda.index'
+import { Route as TiendaSlugRouteImport } from './routes/tienda.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -142,6 +144,16 @@ const OrdenCodeRoute = OrdenCodeRouteImport.update({
   path: '/orden/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TiendaIndexRoute = TiendaIndexRouteImport.update({
+  id: '/tienda/',
+  path: '/tienda/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TiendaSlugRoute = TiendaSlugRouteImport.update({
+  id: '/tienda/$slug',
+  path: '/tienda/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -164,8 +176,10 @@ export interface FileRoutesByFullPath {
   '/comprar/$dateId': typeof ComprarDateIdRoute
   '/evento/$slug': typeof EventoSlugRoute
   '/orden/$code': typeof OrdenCodeRoute
+  '/tienda/$slug': typeof TiendaSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/orden/': typeof OrdenIndexRoute
+  '/tienda/': typeof TiendaIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -187,8 +201,10 @@ export interface FileRoutesByTo {
   '/comprar/$dateId': typeof ComprarDateIdRoute
   '/evento/$slug': typeof EventoSlugRoute
   '/orden/$code': typeof OrdenCodeRoute
+  '/tienda/$slug': typeof TiendaSlugRoute
   '/admin': typeof AdminIndexRoute
   '/orden': typeof OrdenIndexRoute
+  '/tienda': typeof TiendaIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -212,8 +228,10 @@ export interface FileRoutesById {
   '/comprar/$dateId': typeof ComprarDateIdRoute
   '/evento/$slug': typeof EventoSlugRoute
   '/orden/$code': typeof OrdenCodeRoute
+  '/tienda/$slug': typeof TiendaSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/orden/': typeof OrdenIndexRoute
+  '/tienda/': typeof TiendaIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -238,8 +256,10 @@ export interface FileRouteTypes {
     | '/comprar/$dateId'
     | '/evento/$slug'
     | '/orden/$code'
+    | '/tienda/$slug'
     | '/admin/'
     | '/orden/'
+    | '/tienda/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -261,8 +281,10 @@ export interface FileRouteTypes {
     | '/comprar/$dateId'
     | '/evento/$slug'
     | '/orden/$code'
+    | '/tienda/$slug'
     | '/admin'
     | '/orden'
+    | '/tienda'
   id:
     | '__root__'
     | '/'
@@ -285,8 +307,10 @@ export interface FileRouteTypes {
     | '/comprar/$dateId'
     | '/evento/$slug'
     | '/orden/$code'
+    | '/tienda/$slug'
     | '/admin/'
     | '/orden/'
+    | '/tienda/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -304,7 +328,9 @@ export interface RootRouteChildren {
   ComprarDateIdRoute: typeof ComprarDateIdRoute
   EventoSlugRoute: typeof EventoSlugRoute
   OrdenCodeRoute: typeof OrdenCodeRoute
+  TiendaSlugRoute: typeof TiendaSlugRoute
   OrdenIndexRoute: typeof OrdenIndexRoute
+  TiendaIndexRoute: typeof TiendaIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -463,6 +489,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrdenCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tienda/': {
+      id: '/tienda/'
+      path: '/tienda'
+      fullPath: '/tienda/'
+      preLoaderRoute: typeof TiendaIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tienda/$slug': {
+      id: '/tienda/$slug'
+      path: '/tienda/$slug'
+      fullPath: '/tienda/$slug'
+      preLoaderRoute: typeof TiendaSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -503,7 +543,9 @@ const rootRouteChildren: RootRouteChildren = {
   ComprarDateIdRoute: ComprarDateIdRoute,
   EventoSlugRoute: EventoSlugRoute,
   OrdenCodeRoute: OrdenCodeRoute,
+  TiendaSlugRoute: TiendaSlugRoute,
   OrdenIndexRoute: OrdenIndexRoute,
+  TiendaIndexRoute: TiendaIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

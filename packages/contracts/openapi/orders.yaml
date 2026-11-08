@@ -270,7 +270,9 @@ components:
         reservationId: { type: string, format: uuid }
         eventId: { type: string, format: uuid }
         eventDateId: { type: string, format: uuid }
-        display: { type: object, description: "Solo para mostrar" }
+        display:
+          type: object
+          description: "Solo para mostrar (title, subtitle, eventSlug, startsAt, venueName, seatLabel, productSlug, imageUrl)"
         unitPrice: { type: integer, description: "Informativo: el checkout recalcula" }
         unitFee: { type: integer }
     Order:

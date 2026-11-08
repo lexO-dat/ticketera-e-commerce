@@ -23,6 +23,9 @@ export const cartItemSchema = z.strictObject({
       startsAt: z.string().max(40).optional(),
       venueName: z.string().max(120).optional(),
       seatLabel: z.string().max(80).optional(),
+      /** Productos: enlace a su ficha en la tienda. */
+      productSlug: z.string().max(100).optional(),
+      imageUrl: z.string().max(300).optional(),
     })
     .optional(),
   unitPrice: z.int().min(0),

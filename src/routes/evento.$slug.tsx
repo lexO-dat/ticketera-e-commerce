@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 
 import { PublicLayout } from "@/components/site/PublicLayout";
@@ -14,7 +14,8 @@ import {
 } from "@/components/kit/Text";
 import { PillLink } from "@/components/kit/PillButton";
 import { HeroMedia } from "@/components/site/HeroMedia";
-import { getEvent, trackView } from "@/lib/catalog.functions";
+import { ProductCard } from "@/components/site/ProductCard";
+import { getEvent, listProducts, trackView } from "@/lib/catalog.functions";
 import { CATEGORY_LABELS, clock, longDate, money } from "@/lib/format";
 
 const eventQuery = (slug: string) =>
@@ -191,6 +192,27 @@ function EventDetail() {
           </div>
         </div>
       </div>
+      <EventProducts eventId={event.id} />
     </PublicLayout>
+  );
+}
+
+/** Productos oficiales del evento (se cargan en el cliente: la ficha del evento no espera por ellos). */
+function EventProducts({ eventId }: { eventId: string }) {
+  const { data: products = [] } = useQuery({
+    queryKey: ["products", "list", eventId],
+    queryFn: () => listProducts({ data: { eventId } }),
+  });
+  if (products.length === 0) return null;
+  return (
+    <section className="mx-auto max-w-[1240px] px-5 pb-20 md:px-8">
+      <Hairline />
+      <SectionTitle className="mt-10">Productos oficiales</SectionTitle>
+      <div className="mt-8 grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
+        {products.map((product) => (
+          <ProductCard key={product.id} product={product} />
+        ))}
+      </div>
+    </section>
   );
 }

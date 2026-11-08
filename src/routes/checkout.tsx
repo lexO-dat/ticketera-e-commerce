@@ -31,7 +31,6 @@ function CheckoutRoute() {
   );
 }
 
-
 function CheckoutPage() {
   const { items, totals, loaded } = useCart();
   const navigate = useNavigate();
@@ -200,14 +199,17 @@ function CheckoutPage() {
                     {item.eventTitle} × {item.quantity}
                   </span>
                   <MetaText>
-                    {dateAndTime(item.startsAt)} · {item.sectionName}
-                    {item.seatLabel ? ` · ${item.seatLabel}` : ""}
+                    {item.kind === "product"
+                      ? "Tienda"
+                      : `${dateAndTime(item.startsAt)} · ${item.sectionName}${
+                          item.seatLabel ? ` · ${item.seatLabel}` : ""
+                        }`}
                   </MetaText>
                 </div>
               ))}
             </div>
             <Hairline />
-            <SummaryRow label="Tickets" value={money(totals.subtotal)} />
+            <SummaryRow label="Subtotal" value={money(totals.subtotal)} />
             <SummaryRow label="Cargos por servicio" value={money(totals.fees)} />
             {discount > 0 ? <SummaryRow label="Descuento" value={`- ${money(discount)}`} /> : null}
             <Hairline />
@@ -226,7 +228,8 @@ function CheckoutPage() {
               {busy ? "Procesando…" : `Pagar ${money(grandTotal)}`}
             </PillButton>
             <MetaText>
-              Al pagar aceptas los términos de compra. Recibirás tus tickets con código QR.
+              Al pagar aceptas los términos de compra. Recibirás tus tickets con código QR y la
+              confirmación de tus productos por correo.
             </MetaText>
           </aside>
         </div>

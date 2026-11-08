@@ -38,6 +38,9 @@ export function SiteHeader() {
               {CATEGORY_LABELS[category]}
             </Link>
           ))}
+          <Link to="/tienda" className="text-body text-carbon transition-opacity hover:opacity-60">
+            Tienda
+          </Link>
         </nav>
 
         <form onSubmit={submit} className="ml-auto hidden w-[260px] md:block">
@@ -103,6 +106,9 @@ export function SiteHeader() {
                 {CATEGORY_LABELS[category]}
               </Link>
             ))}
+            <Link to="/tienda" onClick={() => setOpen(false)} className="text-lead text-carbon">
+              Tienda
+            </Link>
             {session ? (
               <Link
                 to={isAdmin ? "/admin" : "/mi-cuenta"}

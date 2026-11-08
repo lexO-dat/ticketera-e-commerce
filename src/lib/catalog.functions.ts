@@ -257,3 +257,53 @@ export const trackView = createServerFn({ method: "POST" })
     await gatewayFetch(`/catalog/events/${data.eventId}/views`, { method: "POST" });
     return { ok: true };
   });
+
+/** Producto de la tienda (RF03, RF14): un `ItemVendible` de kind `product` en catalog. */
+export type CatalogProduct = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  price: number;
+  fee: number;
+  imageUrl: string | null;
+  eventId: string | null;
+  maxPerOrder: number;
+};
+
+type ApiProduct = Omit<CatalogProduct, "price" | "fee"> & { price: string; fee: string };
+
+const toProduct = (product: ApiProduct): CatalogProduct => ({
+  ...product,
+  price: Number(product.price),
+  fee: Number(product.fee),
+});
+
+/** Productos activos; con `eventId`, solo los asociados a ese evento. */
+export const listProducts = createServerFn({ method: "GET" })
+  .validator((input: unknown) =>
+    z
+      .object({ eventId: z.string().uuid().optional() })
+      .default({})
+      .parse(input ?? {}),
+  )
+  .handler(async ({ data }) => {
+    const { gatewayFetch } = await import("./auth/gateway.server");
+    const query = data.eventId ? `?eventId=${data.eventId}` : "";
+    const { items } = await gatewayFetch<{ items: ApiProduct[] }>(`/catalog/products${query}`);
+    return items.map(toProduct);
+  });
+
+export const getProduct = createServerFn({ method: "GET" })
+  .validator((input: unknown) =>
+    z.object({ slug: z.string().regex(/^[a-z0-9-]{1,80}$/) }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const { gatewayFetch, GatewayError } = await import("./auth/gateway.server");
+    try {
+      return toProduct(await gatewayFetch<ApiProduct>(`/catalog/products/${data.slug}`));
+    } catch (error) {
+      if (error instanceof GatewayError && error.status === 404) return null;
+      throw error;
+    }
+  });

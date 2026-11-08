@@ -24,6 +24,8 @@ export type ServerCartItem = {
     startsAt?: string;
     venueName?: string;
     seatLabel?: string;
+    productSlug?: string;
+    imageUrl?: string;
   };
   unitPrice: number;
   unitFee: number;
@@ -77,6 +79,8 @@ const itemSchema = z.object({
       startsAt: z.string().max(40).optional(),
       venueName: z.string().max(120).optional(),
       seatLabel: z.string().max(80).optional(),
+      productSlug: z.string().max(100).optional(),
+      imageUrl: z.string().max(300).optional(),
     })
     .optional(),
   unitPrice: z.number().int().min(0),
