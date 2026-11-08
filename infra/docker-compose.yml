@@ -270,6 +270,7 @@ services:
       AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
       JWKS_URL: http://identity:3000/.well-known/jwks.json
       QUEUE_JWKS_URL: http://queue:3000/.well-known/jwks.json
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-dev-token-change-me-0123456789}
       CATALOG_URL: http://catalog:3000
     depends_on:
       postgres-primary:
@@ -281,6 +282,93 @@ services:
       catalog:
         condition: service_healthy
       queue:
+        condition: service_healthy
+
+  # Único mock del sistema (ADR-07): imita Webpay Plus. El formulario se ve en /webpay/ vía Nginx.
+  webpay-mock:
+    build:
+      context: ..
+      dockerfile: services/webpay-mock/Dockerfile
+    init: true
+    environment:
+      SERVICE_NAME: webpay-mock
+      PORT: "3000"
+      LOG_LEVEL: info
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      WEBPAY_API_KEY_ID: ${WEBPAY_API_KEY_ID:-597055555532}
+      WEBPAY_API_KEY_SECRET: ${WEBPAY_API_KEY_SECRET:-webpay-mock-dev-secret-0123456789}
+      WEBPAY_FORM_URL: ${PUBLIC_WEB_URL:-https://localhost:8443}/webpay/form
+      WEBPAY_MOCK_DEFAULT_OUTCOME: ${WEBPAY_MOCK_DEFAULT_OUTCOME:-reject}
+      WEBPAY_MOCK_LATENCY_MS: ${WEBPAY_MOCK_LATENCY_MS:-0}
+      WEBPAY_MOCK_COMMIT_LOSS_RATIO: ${WEBPAY_MOCK_COMMIT_LOSS_RATIO:-0}
+      WEBPAY_MOCK_ERROR_RATIO: ${WEBPAY_MOCK_ERROR_RATIO:-0}
+    ports:
+      # Desarrollo: el simulador de carga y Vite llegan al formulario sin pasar por Nginx.
+      - "127.0.0.1:3005:3000"
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+
+  payments:
+    build:
+      context: ..
+      dockerfile: services/payments/Dockerfile
+    init: true
+    deploy:
+      replicas: 2
+    environment:
+      SERVICE_NAME: payments
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://payments:${PG_PASSWORD_PAYMENTS:-payments-dev-password}@postgres-primary:5432/payments
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
+      JWKS_URL: http://identity:3000/.well-known/jwks.json
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-dev-token-change-me-0123456789}
+      ORDERS_URL: http://orders:3000
+      WEBPAY_URL: http://webpay-mock:3000
+      WEBPAY_API_KEY_ID: ${WEBPAY_API_KEY_ID:-597055555532}
+      WEBPAY_API_KEY_SECRET: ${WEBPAY_API_KEY_SECRET:-webpay-mock-dev-secret-0123456789}
+      PAYMENT_RETURN_URL: ${PUBLIC_WEB_URL:-https://localhost:8443}/api/payments/return
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-https://localhost:8443}
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      webpay-mock:
+        condition: service_healthy
+
+  orders:
+    build:
+      context: ..
+      dockerfile: services/orders/Dockerfile
+    init: true
+    deploy:
+      replicas: 2
+    environment:
+      SERVICE_NAME: orders
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://orders:${PG_PASSWORD_ORDERS:-orders-dev-password}@postgres-primary:5432/orders
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis-dev-password}@redis-primary:6379
+      AMQP_URL: amqp://${RABBITMQ_USER:-ticketera}:${RABBITMQ_PASSWORD:-rabbitmq-dev-password}@rabbitmq:5672
+      JWKS_URL: http://identity:3000/.well-known/jwks.json
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-internal-dev-token-change-me-0123456789}
+      INVENTORY_URL: http://inventory:3000
+      CATALOG_URL: http://catalog:3000
+      PAYMENTS_URL: http://payments:3000
+      SEED_DEMO_DATA: ${ORDERS_SEED_DEMO_DATA:-true}
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis-primary:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      inventory:
+        condition: service_healthy
+      payments:
         condition: service_healthy
 
   gateway:
@@ -298,6 +386,8 @@ services:
       CATALOG_URLS: http://catalog:3000
       QUEUE_URLS: http://queue:3000
       INVENTORY_URLS: http://inventory:3000
+      ORDERS_URLS: http://orders:3000
+      PAYMENTS_URLS: http://payments:3000
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost:8443}
     ports:
       # La web (BFF) en desarrollo llama al gateway directo; el navegador entra por Nginx.
@@ -312,6 +402,10 @@ services:
       queue:
         condition: service_healthy
       inventory:
+        condition: service_healthy
+      orders:
+        condition: service_healthy
+      payments:
         condition: service_healthy
 
   # Plantilla de servicio: `docker compose --profile template up -d --build template`.

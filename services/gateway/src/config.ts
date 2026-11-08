@@ -20,6 +20,9 @@ const schema = baseServiceEnv.extend({
   /** Réplicas de queue (fila virtual) e inventory (reservas). */
   QUEUE_URLS: urlList,
   INVENTORY_URLS: urlList,
+  /** Réplicas de orders y payments (saga de compra). */
+  ORDERS_URLS: urlList,
+  PAYMENTS_URLS: urlList,
   /** Orígenes de navegador permitidos (CORS) separados por coma; vacío = ninguno. */
   CORS_ORIGINS: z
     .string()

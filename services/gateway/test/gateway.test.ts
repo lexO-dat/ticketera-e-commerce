@@ -72,6 +72,8 @@ describe("gateway", () => {
         CATALOG_URLS: [`http://127.0.0.1:${port}`],
         QUEUE_URLS: [`http://127.0.0.1:${port}`],
         INVENTORY_URLS: [`http://127.0.0.1:${port}`],
+        ORDERS_URLS: [`http://127.0.0.1:${port}`],
+        PAYMENTS_URLS: [`http://127.0.0.1:${port}`],
         CORS_ORIGINS: ["https://localhost:8443"],
         TRUST_PROXY: ["127.0.0.1"],
         UPSTREAM_TIMEOUT_MS: 2_000,
@@ -215,6 +217,40 @@ describe("gateway", () => {
     expect(queueAdmin.statusCode).toBe(403);
   });
 
+  it("enruta orders y payments; el retorno del adquirente no exige sesión y /internal no es alcanzable", async () => {
+    const back = await gateway.inject({ url: "/payments/return?token_ws=abc" });
+    expect(back.statusCode).toBe(200);
+    expect(back.json().upstreamUrl).toBe("/v1/return?token_ws=abc");
+    const authorization = `Bearer ${await token(["customer"])}`;
+    const cart = await gateway.inject({ url: "/orders/cart", headers: { authorization } });
+    expect(cart.json().upstreamUrl).toBe("/v1/cart");
+    expect(
+      (await gateway.inject({ url: "/orders/admin/orders", headers: { authorization } }))
+        .statusCode,
+    ).toBe(403);
+    expect(
+      (await gateway.inject({ url: "/payments/admin/ledger/check", headers: { authorization } }))
+        .statusCode,
+    ).toBe(403);
+    const before = received.length;
+    for (const url of [
+      "/internal/orders/x",
+      "/orders/../internal/orders/x",
+      "/payments/%2e%2e/internal/payments",
+    ]) {
+      const response = await gateway.inject({ url, headers: { "x-internal-token": "adivinado" } });
+      if (response.statusCode === 200)
+        expect(response.json().upstreamUrl).not.toMatch(/^\/internal/);
+    }
+    expect(
+      received
+        .slice(before)
+        .every(
+          (r) => !r.url.startsWith("/internal") && r.headers["x-internal-token"] === undefined,
+        ),
+    ).toBe(true);
+  });
+
   it("no permite escapar del prefijo con ../", async () => {
     const response = await gateway.inject({ url: "/auth/../admin/users" });
     expect([400, 401, 404]).toContain(response.statusCode);
@@ -274,6 +310,8 @@ describe("gateway", () => {
         CATALOG_URLS: ["http://127.0.0.1:1"],
         QUEUE_URLS: ["http://127.0.0.1:1"],
         INVENTORY_URLS: ["http://127.0.0.1:1"],
+        ORDERS_URLS: ["http://127.0.0.1:1"],
+        PAYMENTS_URLS: ["http://127.0.0.1:1"],
         CORS_ORIGINS: [],
         TRUST_PROXY: [],
         UPSTREAM_TIMEOUT_MS: 1_000,

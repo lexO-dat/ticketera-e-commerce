@@ -55,6 +55,15 @@ export function defaultRules(perMinute: number): RateLimitRule[] {
       by: "user",
       matches: (method, url) => method === "POST" && url === "/inventory/reservations",
     },
+    // Antifraude: pocos checkouts por usuario (cada uno abre un cobro).
+    {
+      name: "checkout",
+      limit: 10,
+      windowSeconds: 60,
+      by: "user",
+      matches: (method, url) =>
+        method === "POST" && (url === "/orders/checkout" || url.endsWith("/pay")),
+    },
     { name: "global", limit: perMinute, windowSeconds: 60, by: "user", matches: () => true },
   ];
 }

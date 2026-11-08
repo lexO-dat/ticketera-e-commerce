@@ -14,7 +14,15 @@ export interface UpstreamRoute {
 }
 
 export function upstreamRoutes(
-  config: Pick<Config, "IDENTITY_URLS" | "CATALOG_URLS" | "QUEUE_URLS" | "INVENTORY_URLS">,
+  config: Pick<
+    Config,
+    | "IDENTITY_URLS"
+    | "CATALOG_URLS"
+    | "QUEUE_URLS"
+    | "INVENTORY_URLS"
+    | "ORDERS_URLS"
+    | "PAYMENTS_URLS"
+  >,
 ): UpstreamRoute[] {
   return [
     { prefix: "/auth", upstreams: config.IDENTITY_URLS, rewritePrefix: "/v1/auth" },
@@ -49,5 +57,20 @@ export function upstreamRoutes(
       roles: ["admin"],
     },
     { prefix: "/inventory", upstreams: config.INVENTORY_URLS, rewritePrefix: "/v1" },
+    // Carro, checkout y órdenes; pagos (el retorno del adquirente es público, sin sesión).
+    {
+      prefix: "/orders/admin",
+      upstreams: config.ORDERS_URLS,
+      rewritePrefix: "/v1/admin",
+      roles: ["admin"],
+    },
+    { prefix: "/orders", upstreams: config.ORDERS_URLS, rewritePrefix: "/v1" },
+    {
+      prefix: "/payments/admin",
+      upstreams: config.PAYMENTS_URLS,
+      rewritePrefix: "/v1/admin",
+      roles: ["admin"],
+    },
+    { prefix: "/payments", upstreams: config.PAYMENTS_URLS, rewritePrefix: "/v1" },
   ];
 }
