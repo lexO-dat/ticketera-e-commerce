@@ -59,7 +59,7 @@ jobs:
       - run: npm run build:backend
 
   notifications:
-    name: Notifications (Python: ruff, pytest)
+    name: "Notifications (Python: ruff, pytest)"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
