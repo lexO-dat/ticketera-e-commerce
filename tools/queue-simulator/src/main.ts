@@ -492,9 +492,13 @@ async function main() {
         while (next < confirmedOrders.length) {
           const { client, code } = confirmedOrders[next++]!;
           const order = await client.request<{ id?: string }>("GET", `/orders/orders/${code}`);
-          const refund = order.body.id
-            ? await admin.request("POST", `/orders/admin/orders/${order.body.id}/refund`)
-            : order;
+          let refund = order;
+          // El admin también tiene límite por usuario: se respeta Retry-After.
+          for (let attempt = 0; order.body.id && attempt < 20; attempt++) {
+            refund = await admin.request("POST", `/orders/admin/orders/${order.body.id}/refund`);
+            if (refund.status !== 429) break;
+            await sleep(Number(refund.headers.get("retry-after") ?? 5) * 1000);
+          }
           if (refund.status === 200) refunded += 1;
           else failures.push(`no se pudo reembolsar ${code}: ${refund.status}`);
         }
