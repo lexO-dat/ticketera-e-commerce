@@ -9,6 +9,8 @@ import { buildApp } from "./app.js";
 import { createReadCache } from "./cache.js";
 import { readConfig } from "./config.js";
 import { METRICS_SUBSCRIPTION, createMetricsService } from "./metrics/service.js";
+import { seedDemoImages } from "./demo-art.js";
+import { createMediaService } from "./media/service.js";
 import { seedDemoData } from "./seed.js";
 
 const MIGRATIONS_DIR = fileURLToPath(new URL("../migrations", import.meta.url));
@@ -29,6 +31,14 @@ async function main(): Promise<void> {
   if (config.SEED_DEMO_DATA) await seedDemoData(pool, DEMO_SEED_FILE, logger);
 
   const redis = createRedis({ url: config.REDIS_URL, connectionName: config.SERVICE_NAME, logger });
+  const cache = createReadCache({ redis, ttlSeconds: config.CACHE_TTL_SECONDS, logger });
+  if (config.SEED_DEMO_DATA) {
+    // Portadas propias para los datos de demostración (el prototipo no traía imágenes).
+    const media = createMediaService({ pool, publicPath: config.MEDIA_PUBLIC_PATH });
+    await seedDemoImages({ pool, media, cache, logger }).catch((error: unknown) =>
+      logger.warn({ err: error }, "no se pudieron generar las portadas de demostración"),
+    );
+  }
   const bus = await RabbitEventBus.connect({
     url: config.AMQP_URL,
     logger,
@@ -54,7 +64,7 @@ async function main(): Promise<void> {
   const app = buildApp({
     logger,
     pool,
-    cache: createReadCache({ redis, ttlSeconds: config.CACHE_TTL_SECONDS, logger }),
+    cache,
     verifyToken: createTokenVerifier({ jwksUrl: config.JWKS_URL }),
     mediaPublicPath: config.MEDIA_PUBLIC_PATH,
     mediaMaxUploadBytes: config.MEDIA_MAX_UPLOAD_BYTES,

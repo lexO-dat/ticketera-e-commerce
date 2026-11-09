@@ -14,6 +14,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { type ReadCache, createReadCache, noCache } from "../src/cache.js";
 import { type MetricsService, createMetricsService } from "../src/metrics/service.js";
+import { seedDemoImages } from "../src/demo-art.js";
+import { createMediaService } from "../src/media/service.js";
 import { seedDemoData } from "../src/seed.js";
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL;
@@ -764,5 +766,25 @@ describe.skipIf(!DATABASE_URL)("catalog (integración)", () => {
       email.toLowerCase(),
     ]);
     expect(rows.rowCount).toBe(1);
+  });
+
+  it("portadas de demostración: una WebP por evento y producto, idempotente", async () => {
+    const media = createMediaService({ pool, publicPath: "/api/catalog/media" });
+    const before = await pool.query(
+      "select count(*)::int as n from events where image_id is null and id::text like 'e0000000-%'",
+    );
+    const generated = await seedDemoImages({ pool, media, cache: noCache, logger });
+    expect(generated).toBeGreaterThanOrEqual(before.rows[0].n);
+    expect(await seedDemoImages({ pool, media, cache: noCache, logger })).toBe(0);
+    const missing = await pool.query(
+      `select (select count(*) from events where image_id is null and id::text like 'e0000000-%')
+            + (select count(*) from products where image_id is null and id::text like 'b0000000-%') as n`,
+    );
+    expect(Number(missing.rows[0].n)).toBe(0);
+    const lumen = (await request("GET", "/v1/events/lumen-tour-santiago")).json();
+    expect(lumen.imageUrl.startsWith("/api/catalog/media/")).toBe(true);
+    const image = await request("GET", lumen.imageUrl.replace("/api/catalog", "/v1"));
+    expect(image.statusCode).toBe(200);
+    expect(image.headers["content-type"]).toBe("image/webp");
   });
 });
