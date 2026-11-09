@@ -126,11 +126,13 @@ jobs:
         run: docker build -f services/${{ matrix.service }}/Dockerfile -t ticketera/${{ matrix.service }}:ci .
 
   edge:
-    name: Imagen nginx (borde + app de validación)
+    name: Imágenes del borde (nginx + scanner, web, pg-failover)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - run: docker build -f infra/nginx/Dockerfile -t ticketera/nginx:ci .
+      - name: Web (SSR, Nitro node-server)
+        run: docker build -f apps/web/Dockerfile -t ticketera/web:ci .
       - name: Monitor de failover de PostgreSQL
         run: docker build -t ticketera/pg-failover:ci infra/pg-failover

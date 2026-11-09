@@ -1,4 +1,5 @@
-# Infraestructura local (vista física en pequeño). Solo para desarrollo y pruebas.
+# Sistema completo en local (vista física en pequeño): web, servicios, datos, broker, correo y borde.
+# Solo para desarrollo y pruebas. Entrada: https://localhost:8443
 #   npm run infra:up      levanta todo y espera a que esté sano
 #   npm run infra:down    detiene (conserva datos)
 #   npm run infra:reset   detiene y borra volúmenes
@@ -229,8 +230,6 @@ services:
       - "127.0.0.1:8443:443"
     volumes:
       - nginx-certs:/etc/nginx/certs
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health | grep -q ok"]
       interval: 5s
@@ -537,6 +536,23 @@ services:
       payments:
         condition: service_healthy
       tickets:
+        condition: service_healthy
+
+  # Web del comprador y panel admin (SSR). Habla solo con el gateway (BFF, ADR-08); el navegador
+  # entra por Nginx (https://localhost:8443). Para desarrollar con recarga en caliente: `npm run dev`
+  # (http://localhost:8080) con este stack levantado.
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    init: true
+    deploy:
+      replicas: 2
+    environment:
+      GATEWAY_URL: http://gateway:3000
+      COOKIE_SECURE: "true"
+    depends_on:
+      gateway:
         condition: service_healthy
 
   # Plantilla de servicio: `docker compose --profile template up -d --build template`.

@@ -15,7 +15,4 @@
 infra
 !infra/nginx
 docs
-# La web no va en las imágenes de servicios (solo su package.json, que npm ci necesita).
-apps/web/src
-apps/web/public
 *.md
