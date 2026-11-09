@@ -1,0 +1,238 @@
+@startuml 02-logica
+!include _estilo.iuml
+title Vista lógica — modelo de dominio por servicio (cada servicio es dueño de sus datos)
+hide empty methods
+top to bottom direction
+skinparam nodesep 25
+skinparam ranksep 45
+
+package "identity" {
+  class Usuario {
+    id : uuid
+    email : texto único
+    nombreCompleto
+    estado : active | disabled
+    emailVerificado : bool
+    passwordHash : Argon2id
+  }
+  enum Rol {
+    customer
+    organizer
+    seller
+    staff
+    admin
+  }
+  class RefreshToken {
+    hash : sha256
+    familia (rotación)
+    expira
+    revocado
+  }
+  class TokenDeUnSoloUso {
+    propósito : verificar | restablecer
+    hash
+    expira
+  }
+  class ClaveDeFirma <<EdDSA>> {
+    kid
+    publica en JWKS
+  }
+  Usuario "1" *-- "1..*" Rol
+  Usuario "1" *-- "*" RefreshToken
+  Usuario "1" *-- "*" TokenDeUnSoloUso
+}
+
+package "catalog" {
+  interface ItemVendible <<punto de extensión ASR05>> {
+    id
+    kind
+    precio, cargo : CLP
+    vendible / motivo
+    maxPorOrden
+    requiereReserva : bool
+  }
+  class Recinto {
+    nombre, ciudad, dirección
+  }
+  class Sector {
+    tipo : numerado | general
+    capacidad
+  }
+  class Butaca {
+    fila, número
+    bloqueada
+  }
+  class Evento {
+    slug, título, artista
+    categoría
+    estado : draft | published | soldout | archived
+    dueño : organizer
+    configuración de fila
+  }
+  class Fecha {
+    inicio, apertura de puertas
+    a la venta
+  }
+  class TipoDeEntrada {
+    precio, cargo
+    capacidad
+  }
+  class Producto {
+    sku, precio
+    estado : draft | active | archived
+    dueño : seller
+  }
+  class Media <<WebP en Postgres · ADR-09>> {
+    sha256 (dedupe)
+    ancho, alto
+  }
+  class MetricaDeEmbudo {
+    día, tipo : view | add_to_cart
+      | checkout | purchase
+    cantidad, monto
+  }
+  Recinto "1" *-- "*" Sector
+  Sector "1" *-- "*" Butaca
+  Evento "1" *-- "*" Fecha
+  Fecha "*" --> "1" Recinto
+  Fecha "1" *-- "*" TipoDeEntrada
+  TipoDeEntrada "*" --> "1" Sector
+  TipoDeEntrada ..|> ItemVendible
+  Producto ..|> ItemVendible
+  Evento --> "0..1" Media : portada
+  Producto --> "0..1" Media
+  Producto "*" --> "0..1" Evento
+  Evento "1" *-- "*" MetricaDeEmbudo
+}
+
+package "queue (Redis)" {
+  class Turno <<ZSET por evento>> {
+    llegada (FIFO)
+    estado : PREQUEUE | WAITING
+      | ADMITTED | COMPLETED
+      | EXPIRED | LEFT | ABANDONED
+  }
+  class TokenDeAdmision <<JWT EdDSA>> {
+    sub (usuario), evt, jti
+    exp (ventana N min)
+  }
+  Turno "1" --> "0..1" TokenDeAdmision : al admitir
+}
+
+package "inventory" {
+  class InventarioDeTipo {
+    capacidad
+    vendidas, reservadas
+  }
+  class Reserva {
+    estado : ACTIVE | SOLD
+      | RELEASED | EXPIRED
+    cantidad
+    expira = ahora + 10 min
+  }
+  class ButacaReservada {
+    única por butaca y fecha
+  }
+  InventarioDeTipo "1" *-- "*" Reserva
+  Reserva "1" *-- "*" ButacaReservada
+}
+
+package "orders" {
+  class Carro <<Redis>> {
+    hasta 20 líneas
+  }
+  class Orden {
+    código TK-XXXXXXXX
+    estado
+    subtotal, cargos, descuento, total
+    comprador (nombre, email)
+    expira
+  }
+  class LineaDeOrden {
+    kind, itemId (ItemVendible)
+    cantidad, precio del servidor
+    requiereReserva
+  }
+  class CodigoPromocional {
+    % descuento
+    usos (contador atómico)
+  }
+  Orden "1" *-- "1..*" LineaDeOrden
+  Orden "*" --> "0..1" CodigoPromocional
+}
+
+package "payments" {
+  interface ProveedorDePago <<adapter ADR-07>> {
+    create()
+    commit()
+    status()
+    refund()
+  }
+  class AdaptadorWebpay
+  class IntentoDePago {
+    monto, cargos : CLP
+    estado (máquina de estados)
+    buyOrder, token
+    clave de idempotencia
+  }
+  class EventoDeAuditoria {
+    de → a, actor, motivo
+  }
+  class Reembolso {
+    monto, motivo
+  }
+  class AsientoContable <<append-only, doble entrada>> {
+    cuenta, débito, crédito
+  }
+  AdaptadorWebpay ..|> ProveedorDePago
+  IntentoDePago "1" *-- "*" EventoDeAuditoria
+  IntentoDePago "1" *-- "*" Reembolso
+  IntentoDePago "1" *-- "*" AsientoContable
+  IntentoDePago ..> ProveedorDePago
+}
+
+package "tickets" {
+  class Entrada {
+    código manual (12)
+    estado : ISSUED | CHECKED_IN | VOIDED
+    QR = JWT EdDSA (typ ticket+jwt)
+    butaca, sector
+  }
+  class CheckIn <<auditoría>> {
+    resultado : ACCEPTED | ALREADY_USED
+      | VOIDED | WRONG_EVENT | INVALID
+    puerta, hora
+  }
+  Entrada "1" *-- "*" CheckIn
+}
+
+package "notifications (Python)" {
+  class ConsumidorDeCorreos {
+    cola quorum + DLQ
+    reintentos con backoff
+  }
+  class Deduplicador <<Redis SET NX>>
+  interface Mailer
+  class SmtpMailer
+  SmtpMailer ..|> Mailer
+  ConsumidorDeCorreos --> Deduplicador
+  ConsumidorDeCorreos --> Mailer
+}
+
+' Referencias entre servicios: solo por id (ningún servicio lee la base de otro).
+Evento .[#7A7A7A].> Usuario : dueño (id)
+Turno .[#7A7A7A].> Evento : por id
+InventarioDeTipo .[#7A7A7A].> TipoDeEntrada : por id
+ButacaReservada .[#7A7A7A].> Butaca : por id
+Reserva .[#7A7A7A].> Usuario : por id
+LineaDeOrden .[#7A7A7A].> Reserva : por id
+LineaDeOrden .[#7A7A7A].> ItemVendible : resuelve precio
+IntentoDePago .[#7A7A7A].> Orden : por id
+Entrada .[#7A7A7A].> LineaDeOrden : una por unidad
+
+legend right
+  Línea punteada gris: referencia por id entre servicios
+  (HTTP/OpenAPI o eventos/AsyncAPI). Los eventos de dominio
+  salen por outbox en la misma transacción que el cambio.
+endlegend
+@enduml

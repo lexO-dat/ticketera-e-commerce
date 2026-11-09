@@ -5,6 +5,8 @@ Transcripción de la presentación _Arquitectura de Software UDP — Sección 2 
 estaba en los diagramas originales. Las partes nuevas están marcadas con **🆕 Fila virtual**.
 
 Este documento es la fuente de verdad. Los cambios se hacen con un ADR en [`../adr`](../adr).
+Los diagramas UML del sistema **implementado** (las 4+1 vistas, generadas con PlantUML) están en
+[`../uml`](../uml/README.md).
 
 ---
 

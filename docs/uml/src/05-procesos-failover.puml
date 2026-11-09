@@ -1,0 +1,44 @@
+@startuml 05-procesos-failover
+!include _estilo.iuml
+title Vista de procesos — failover de PostgreSQL (ADR-10, ≤ 5 s)
+autonumber
+
+participant "Servicio\n(pool de @shared/commons)" as S
+database "Primaria\n172.28.0.20" as PA
+database "Réplica\n172.28.0.21" as PB
+participant "pg-failover\n(monitor)" as M
+
+== Normal ==
+S -> PA : conexión nueva: ¿acepta escrituras?\n(pg_is_in_recovery = false, no aislada)
+PA --> S : sí → se queda
+PA -> PB : replicación síncrona (ANY 1 (replica1))
+loop cada 500 ms
+  M -> PA : sonda (estado, streaming)
+  M -> PB : sonda (receptor de WAL)
+end
+
+== La primaria cae ==
+PA -[#red]x PA : docker kill
+M -> PA : sonda falla (timeout 1 s)
+M -> PB : receptor de WAL ≠ streaming
+note right of M
+  Dos testigos: la primaria no responde y la réplica
+  perdió su stream → promueve con una sola falla.
+  Si la réplica sigue recibiendo, exige 3 fallas.
+end note
+M -> PB : pg_promote()
+M -> PB : synchronous_standby_names = '' (no hay standby)
+S -> PA : conexión nueva falla (1,5 s) → se salta 10 s
+S -> PB : ¿acepta escrituras? sí → nueva primaria
+note over S, PB : Medido: ventana ≤ 1,5 s, 0–1 solicitudes fallidas
+
+== La primaria vieja reaparece ==
+M -> PA : acepta escrituras sin ser líder
+M -> PA : default_transaction_read_only = on;\ntermina sus conexiones (aislada)
+S -> PA : la descarta (solo lectura)
+note over M, PA
+  npm run infra:pg-rejoin: borra su copia, la clona con
+  pg_basebackup y vuelve como réplica; el monitor
+  reactiva la replicación síncrona.
+end note
+@enduml

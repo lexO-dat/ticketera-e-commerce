@@ -1,0 +1,86 @@
+@startuml 04-procesos-estados
+!include _estilo.iuml
+title Vista de procesos — máquinas de estado de los agregados
+' Cada máquina usa identificadores propios (o_, p_, r_, q_, t_): PlantUML comparte los estados con
+' el mismo nombre entre bloques y mezclaría, por ejemplo, el REFUND_PENDING de la orden y del pago.
+
+state "Orden (orders)" as Orden {
+  state "PENDING_PAYMENT" as o_pending
+  state "CONFIRMED" as o_confirmed
+  state "CANCELLED" as o_cancelled
+  state "REFUND_PENDING" as o_refund_pending
+  state "REFUNDED" as o_refunded
+  [*] --> o_pending : checkout
+  o_pending --> o_confirmed : PagoAutorizado\ny venta en inventory
+  o_pending --> o_cancelled : PagoRechazado /\nreserva vencida
+  o_pending --> o_refund_pending : pago tardío o venta\nimposible (reembolso)
+  o_confirmed --> o_refund_pending : reembolso admin\n(sin entradas usadas)
+  o_refund_pending --> o_refunded : PagoReembolsado
+  o_refund_pending --> o_confirmed : el reembolso falló
+}
+
+state "Intento de pago (payments)" as Pago {
+  state "CREATED" as p_created
+  state "PENDING" as p_pending
+  state "AUTHORIZED" as p_authorized
+  state "FAILED" as p_failed
+  state "CANCELED" as p_canceled
+  state "EXPIRED" as p_expired
+  state "UNKNOWN" as p_unknown
+  state "REFUND_PENDING" as p_refund_pending
+  state "REFUNDED" as p_refunded
+  state "PARTIALLY_REFUNDED" as p_partial
+  [*] --> p_created : POST (idempotente)
+  p_created --> p_pending : create OK
+  p_created --> p_failed : adquirente caído
+  p_pending --> p_authorized : commit aprobado
+  p_pending --> p_failed : commit rechazado
+  p_pending --> p_canceled : usuario anula
+  p_pending --> p_expired : formulario vencido
+  p_pending --> p_unknown : commit sin respuesta
+  p_unknown --> p_authorized : conciliación (status)
+  p_unknown --> p_failed : conciliación (status)
+  p_authorized --> p_refund_pending : reembolso
+  p_refund_pending --> p_refunded : total
+  p_refund_pending --> p_partial : parcial
+}
+
+state "Reserva (inventory)" as Reserva {
+  state "ACTIVE" as r_active
+  state "SOLD" as r_sold
+  state "RELEASED" as r_released
+  state "EXPIRED" as r_expired
+  [*] --> r_active : FOR UPDATE,\nexpira en 10 min
+  r_active --> r_sold : venta (orden confirmada)
+  r_active --> r_released : quitar del carro /\npago rechazado
+  r_active --> r_expired : vencida (perezosa\n+ barrido periódico)
+  r_sold --> r_released : reembolso\n(el cupo vuelve)
+}
+
+state "Turno en la fila (queue)" as Turno {
+  state "PREQUEUE" as q_prequeue
+  state "WAITING" as q_waiting
+  state "ADMITTED" as q_admitted
+  state "COMPLETED" as q_completed
+  state "EXPIRED" as q_expired
+  state "LEFT" as q_left
+  state "ABANDONED" as q_abandoned
+  [*] --> q_prequeue : llega antes\nde la apertura
+  [*] --> q_waiting : llega con la\nfila abierta
+  q_prequeue --> q_waiting : apertura\n(orden aleatorio)
+  q_waiting --> q_admitted : admisor\n(cupo libre)
+  q_waiting --> q_abandoned : deja de consultar
+  q_waiting --> q_left : sale de la fila
+  q_admitted --> q_completed : OrdenCreada /\ntermina
+  q_admitted --> q_expired : vence la ventana
+}
+
+state "Entrada (tickets)" as Entrada {
+  state "ISSUED" as t_issued
+  state "CHECKED_IN" as t_checked_in
+  state "VOIDED" as t_voided
+  [*] --> t_issued : OrdenConfirmada
+  t_issued --> t_checked_in : check-in atómico\n(UPDATE … WHERE ISSUED)
+  t_issued --> t_voided : reembolso de la orden
+}
+@enduml

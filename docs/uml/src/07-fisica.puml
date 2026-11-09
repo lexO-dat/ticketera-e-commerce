@@ -1,0 +1,85 @@
+@startuml 07-fisica
+!include _estilo.iuml
+title Vista física — despliegue (infra/docker-compose.yml)
+
+actor "Navegador\n(comprador, admin, puerta)" as Browser
+
+node "Host Docker (red ticketera_default 172.28.0.0/16)" {
+  node "Borde" {
+    component "nginx\n:8443 TLS 1.3 · rate limit ·\ncaché de imágenes · /scanner" as Nginx
+  }
+
+  node "Capa de presentación" {
+    component "web ×2\nSSR · BFF · cookies HttpOnly" as Web
+  }
+
+  node "Capa de aplicación (sin estado)" as App {
+    component "gateway ×2\nJWT (JWKS) · token de fila ·\nrate limit · CORS" as Gateway
+    component "identity ×2" as Identity
+    component "catalog ×2" as Catalog
+    component "queue ×2\n(admisor con lock de líder)" as Queue
+    component "inventory ×2" as Inventory
+    component "orders ×2" as Orders
+    component "payments ×2" as Payments
+    component "tickets ×2" as Tickets
+    component "notifications ×1\n(Python)" as Notifications
+  }
+
+  node "Capa de datos" {
+    database "postgres-primary\n172.28.0.20" as PgA
+    database "postgres-replica\n172.28.0.21" as PgB
+    component "pg-failover\n(monitor)" as PgMon
+    database "redis-primary\n172.28.0.10" as RdA
+    database "redis-replica\n172.28.0.11" as RdB
+    component "redis-sentinel ×3\nquórum 2" as Sentinels
+    queue "rabbitmq\ncolas quorum + DLQ" as Mq
+  }
+
+  node "Externos simulados" {
+    component "webpay-mock\n«adquirente»" as Webpay
+    component "mailpit\nSMTP :1025 · UI :8025" as Mailpit
+  }
+}
+
+Browser --> Nginx : HTTPS
+Nginx --> Web : /
+Nginx --> Gateway : /api/*
+Nginx --> Webpay : /webpay/*
+Web --> Gateway : HTTP interno (BFF)
+Gateway --> Identity
+Gateway --> Catalog
+Gateway --> Queue
+Gateway --> Inventory
+Gateway --> Orders
+Gateway --> Payments
+Gateway --> Tickets
+Orders --> Inventory : /internal
+Orders --> Catalog : items/resolve
+Orders --> Payments : /internal
+Orders --> Tickets : /internal
+Payments --> Webpay : adapter
+Payments --> Orders : /internal (monto)
+Queue --> Catalog : config. de fila
+Inventory --> Catalog : capacidades
+Tickets --> Catalog : plano de butacas
+Notifications --> Tickets : /internal
+Notifications --> Mailpit : SMTP
+
+App --> PgA : identity, catalog, inventory,\norders, payments, tickets\n(IP fija + failover_hosts)
+PgA --> PgB : replicación síncrona
+PgMon ..> PgA : sondea / aísla
+PgMon ..> PgB : promueve
+
+App --> RdA : gateway (rate limit), catalog (caché),\nqueue (fila), inventory (jti),\norders (carro), notifications (dedupe)\nvía Sentinel
+RdA --> RdB : replicación
+Sentinels ..> RdA : vigila
+Sentinels ..> RdB : promueve
+
+App --> Mq : eventos de dominio (outbox)\ny consumidores (inbox)
+
+note bottom of PgMon
+  Los servicios conectan por IP fija con respaldo
+  (?failover_hosts=) y Redis vía Sentinel (ADR-10).
+  En producción: cada réplica en una zona distinta (todo.md).
+end note
+@enduml

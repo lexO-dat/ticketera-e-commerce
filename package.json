@@ -18,7 +18,8 @@
     "simulate:queue": "npm run simulate -w @tools/queue-simulator --",
     "test:failover": "npm run failover -w @tools/failover-test --",
     "infra:pg-rejoin": "node scripts/pg-rejoin.mjs",
-    "dev:scanner": "npm run dev -w @apps/scanner"
+    "dev:scanner": "npm run dev -w @apps/scanner",
+    "docs:uml": "node scripts/render-uml.mjs"
   },
   "overrides": {
     "rolldown": "1.2.1"

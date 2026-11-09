@@ -1,0 +1,61 @@
+' Estilo común de los diagramas (se incluye con !include _estilo.iuml).
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam roundCorner 8
+skinparam ArrowColor #444444
+skinparam ArrowFontSize 11
+skinparam backgroundColor #FFFFFF
+skinparam packageStyle rectangle
+skinparam package {
+  BorderColor #8A8A8A
+  BackgroundColor #FAFAFA
+  FontStyle bold
+}
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+  HeaderBackgroundColor #EEF3F8
+}
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam node {
+  BackgroundColor #F4F7FB
+  BorderColor #555555
+}
+skinparam database {
+  BackgroundColor #FFF8E6
+  BorderColor #8A6D1F
+}
+skinparam queue {
+  BackgroundColor #F1ECFA
+  BorderColor #5B3F8C
+}
+skinparam actor {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam state {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam sequence {
+  ParticipantBackgroundColor #FFFFFF
+  ParticipantBorderColor #555555
+  LifeLineBorderColor #9A9A9A
+  GroupBackgroundColor #F6F6F6
+}
+skinparam note {
+  BackgroundColor #FFFDE7
+  BorderColor #B8A642
+}
+skinparam legend {
+  BackgroundColor #FAFAFA
+  BorderColor #B0B0B0
+}

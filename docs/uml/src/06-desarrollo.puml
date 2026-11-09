@@ -1,0 +1,85 @@
+@startuml 06-desarrollo
+!include _estilo.iuml
+title Vista de desarrollo — monorepo (npm workspaces) y dependencias entre módulos
+skinparam linetype ortho
+
+package "apps" {
+  component "web\n@apps/web\nTanStack Start (SSR) · BFF" as Web
+  component "scanner\n@apps/scanner\nReact + Vite (PWA de puerta)" as Scanner
+}
+
+package "services (Node 22 + TypeScript + Fastify)" {
+  component "gateway" as Gateway
+  component "identity" as Identity
+  component "catalog" as Catalog
+  component "queue" as Queue
+  component "inventory" as Inventory
+  component "orders" as Orders
+  component "payments" as Payments
+  component "tickets" as Tickets
+  component "webpay-mock\n«único mock»" as Webpay
+  component "template\n(npm run new:service)" as Template
+}
+
+package "services (Python 3.12)" {
+  component "notifications\naio-pika · aiosmtplib · Jinja2" as Notifications
+}
+
+package "packages" {
+  component "@shared/commons\nerrores RFC 9457 · logger · BD/outbox/inbox ·\nbus RabbitMQ · Redis/locks · auth JWT ·\nItemVendible · CLP · cliente HTTP con\nreintentos y circuit breaker" as Commons
+  component "@shared/contracts\nOpenAPI 3.1 (HTTP) · AsyncAPI 3 (eventos)" as Contracts
+}
+
+package "tools" {
+  component "queue-simulator\nbots de carga (10.000)" as Simulator
+  component "failover-test\nbota componentes y mide" as FailoverTest
+}
+
+package "infra" {
+  component "docker-compose.yml" as Compose
+  component "nginx (borde TLS 1.3)" as Nginx
+  component "pg-failover (monitor)" as PgFailover
+  component "redis/sentinel-entrypoint.sh" as Sentinel
+  component "postgres/*.sh" as PgScripts
+}
+
+package "scripts" {
+  component "new-service.mjs" as NewService
+  component "pg-rejoin.mjs" as PgRejoin
+}
+
+Gateway --> Commons
+Identity --> Commons
+Catalog --> Commons
+Queue --> Commons
+Inventory --> Commons
+Orders --> Commons
+Payments --> Commons
+Tickets --> Commons
+Webpay --> Commons
+Template --> Commons
+
+Identity ..> Contracts : implementa
+Catalog ..> Contracts : implementa
+Orders ..> Contracts : implementa
+Payments ..> Contracts : implementa
+Tickets ..> Contracts : implementa
+Notifications ..> Contracts : consume eventos
+
+Web ..> Gateway : HTTP (solo el gateway)
+Scanner ..> Gateway : HTTP /api
+Simulator ..> Gateway
+FailoverTest ..> Nginx
+NewService ..> Template : copia
+
+Nginx ..> Scanner : sirve el build estático
+Compose ..> Nginx
+Compose ..> PgFailover
+Compose ..> Sentinel
+Compose ..> PgScripts
+
+note bottom of Commons
+  Regla (ASR05): un servicio no importa código de otro servicio
+  ni lee su base; comparten solo commons y contratos.
+end note
+@enduml

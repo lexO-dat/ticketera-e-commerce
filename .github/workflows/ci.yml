@@ -134,5 +134,7 @@ jobs:
       - run: docker build -f infra/nginx/Dockerfile -t ticketera/nginx:ci .
       - name: Web (SSR, Nitro node-server)
         run: docker build -f apps/web/Dockerfile -t ticketera/web:ci .
+      - name: Diagramas UML (docs/uml, valida la sintaxis)
+        run: npm run docs:uml
       - name: Monitor de failover de PostgreSQL
         run: docker build -t ticketera/pg-failover:ci infra/pg-failover

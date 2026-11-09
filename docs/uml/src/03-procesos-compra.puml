@@ -1,0 +1,93 @@
+@startuml 03-procesos-compra
+!include _estilo.iuml
+title Vista de procesos — compra de entradas (fila → reserva → pago → entradas → correo)
+autonumber "<b>0."
+
+actor Comprador as C
+participant "Nginx\nTLS 1.3" as N
+participant "web (BFF)\nTanStack Start" as W
+participant "gateway" as G
+participant "queue" as Q
+participant "inventory" as I
+participant "orders" as O
+participant "catalog" as CAT
+participant "payments" as P
+participant "webpay-mock\n«adquirente»" as WP
+queue "RabbitMQ\nticketera.events" as MQ
+participant "tickets" as T
+participant "notifications" as NT
+
+== Fila virtual (si el evento la tiene activa, RF16) ==
+C -> N : entra a la sala de espera
+N -> W
+W -> G : POST /queue/events/:id/join (JWT de la sesión)
+G -> Q : join (ZADD, Lua atómico)
+loop cada Retry-After indicado por el servidor
+  W -> G : GET /queue/events/:id/status
+  G -> Q : posición (ZRANK) y ETA
+end
+note over Q : El admisor (lock de líder) admite cada segundo\ncupos libres = concurrent_slots − activos
+Q --> W : ADMITTED + token de admisión (JWT EdDSA: sub, evt, jti, exp)
+
+== Reserva exclusiva (RF07, ADR-03) ==
+C -> W : elige butacas
+W -> G : POST /inventory/reservations\nx-admission-token
+G -> G : verifica JWT de sesión y firma del token de admisión
+G -> I
+I -> I : jti vigente en Redis
+I -> I : BEGIN; SELECT … FOR UPDATE; butacas únicas;\nexpira = now() + 10 min; outbox ReservaCreada; COMMIT
+I --> W : 201 reserva
+W -> G : POST /orders/cart/items (Redis)
+
+== Checkout idempotente (RF08) ==
+C -> W : Pagar
+W -> G : POST /orders/checkout\nIdempotency-Key
+G -> O
+O -> I : GET /internal/reservations/:id (propia y ACTIVE)
+O -> CAT : POST /v1/items/resolve\n(precios del servidor, requiereReserva)
+O -> O : orden PENDING_PAYMENT, promo atómica,\noutbox OrdenCreada (misma transacción)
+O -> P : POST /internal/payments (clave = orden)
+P -> WP : create (buy_order, monto)
+WP --> P : token + url del formulario
+O --> W : orderCode + redirectUrl
+MQ <- O : OrdenCreada (outbox relay)
+MQ -> Q : libera el turno de la fila
+
+== Pago en el adquirente (RF09) ==
+W --> C : redirección a /webpay/form
+C -> WP : paga (email @acceptme.com → aprueba)
+WP --> C : redirección a /api/payments/return?token_ws=…
+C -> N
+N -> G
+G -> P : return
+P -> WP : commit
+WP --> P : AUTHORIZED
+P -> P : intento AUTHORIZED, asientos de doble entrada,\nauditoría, outbox PagoAutorizado
+P --> C : 303 → /orden/TK-…?pago=aprobado
+
+== Saga asíncrona (RF10, RF11) ==
+MQ <- P : PagoAutorizado
+MQ -> O : (inbox idempotente)
+alt pago aprobado antes del vencimiento
+  O -> I : POST /internal/reservations/sell
+  I -> I : reserva SOLD, contadores, outbox ReservaVendida
+  O -> O : orden CONFIRMED, outbox OrdenConfirmada
+  MQ <- O : OrdenConfirmada
+  MQ -> T : emite una entrada por unidad (QR firmado EdDSA)
+  MQ <- T : EntradasEmitidas
+  MQ -> NT : (SET NX: un correo por evento)
+  NT -> T : GET /internal/orders/:id/tickets
+  NT -> NT : correo con los QR embebidos (SMTP)
+else reserva vencida o venta rechazada en forma definitiva
+  O -> P : refund (LATE_PAYMENT)
+  P -> WP : refund
+  O -> O : orden REFUND_PENDING → REFUNDED
+end
+
+== Pago rechazado ==
+note over P, O
+  commit FAILED / formulario anulado o vencido →
+  PagoRechazado → orden CANCELLED, reserva liberada (< 500 ms),
+  promoción devuelta y correo "Tu pago no se completó".
+end note
+@enduml

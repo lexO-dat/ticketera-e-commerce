@@ -3,7 +3,7 @@
 Proyecto de Arquitectura de Software (UDP, Sección 2).
 
 - Guía para contribuir y reglas: [`AGENTS.md`](AGENTS.md)
-- Arquitectura (4+1, ADR): [`docs/architecture`](docs/architecture/README.md) · [`docs/adr`](docs/adr/README.md)
+- Arquitectura (4+1, ADR): [`docs/architecture`](docs/architecture/README.md) · [`docs/adr`](docs/adr/README.md) · diagramas UML del sistema implementado: [`docs/uml`](docs/uml/README.md)
 - Hoja de ruta: [`roadmap.md`](roadmap.md) · pendientes de infraestructura: [`todo.md`](todo.md)
 
 ## Puesta en marcha

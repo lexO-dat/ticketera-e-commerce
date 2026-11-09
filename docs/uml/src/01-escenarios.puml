@@ -1,0 +1,70 @@
+@startuml 01-escenarios
+!include _estilo.iuml
+title Vista de escenarios (+1) — casos de uso implementados
+left to right direction
+
+actor "Comprador" as Comprador
+actor "Organizador" as Organizador
+actor "Vendedor" as Vendedor
+actor "Personal de puerta\n(staff)" as Staff
+actor "Administrador" as Admin
+actor "Adquirente\nWebpay «mock»" as Webpay <<sistema>>
+actor "Servidor SMTP\n(Mailpit / proveedor)" as Smtp <<sistema>>
+
+rectangle "Ticketera" {
+  package "Cuenta" {
+    usecase "Registrarse y verificar el correo\nRF01" as UC_Reg
+    usecase "Iniciar sesión / recuperar contraseña\nRF02" as UC_Auth
+    usecase "Ver mis entradas con QR\ny mis compras · RF12" as UC_Cuenta
+  }
+  package "Compra" {
+    usecase "Consultar cartelera, eventos\ny disponibilidad · RF03 RF04 RF05" as UC_Catalogo
+    usecase "Esperar en la fila virtual\nRF16 (token de admisión)" as UC_Fila
+    usecase "Reservar butacas o cupos\n10 min exclusivos · RF07" as UC_Reserva
+    usecase "Comprar productos en la tienda\nRF03 RF14" as UC_Tienda
+    usecase "Armar el carro mixto\nRF06" as UC_Carro
+    usecase "Pagar (checkout idempotente)\nRF08 RF09" as UC_Pago
+    usecase "Recibir la orden y las entradas\nRF10 RF11" as UC_Entradas
+  }
+  package "Gestión" {
+    usecase "Administrar eventos, fechas,\nrecintos y fila · RF13" as UC_Eventos
+    usecase "Administrar productos\nRF14" as UC_Productos
+    usecase "Ver embudo de ventas y órdenes;\nreembolsar · panel" as UC_Panel
+    usecase "Administrar usuarios y roles" as UC_Usuarios
+    usecase "Validar entradas en puerta\nRF15 (check-in atómico)" as UC_Validar
+  }
+}
+
+Comprador --> UC_Reg
+Comprador --> UC_Auth
+Comprador --> UC_Catalogo
+Comprador --> UC_Fila
+Comprador --> UC_Reserva
+Comprador --> UC_Tienda
+Comprador --> UC_Carro
+Comprador --> UC_Pago
+Comprador --> UC_Cuenta
+
+UC_Reserva ..> UC_Fila : <<include>>\nsi el evento tiene fila
+UC_Carro ..> UC_Reserva : <<include>>\nentradas
+UC_Pago ..> UC_Carro : <<include>>
+UC_Pago --> Webpay
+UC_Pago ..> UC_Entradas : <<include>>\nsi se aprueba
+UC_Entradas --> Smtp
+UC_Reg --> Smtp
+
+Organizador --> UC_Eventos
+Organizador --> UC_Panel
+Vendedor --> UC_Productos
+Staff --> UC_Validar
+Admin --> UC_Eventos
+Admin --> UC_Productos
+Admin --> UC_Panel
+Admin --> UC_Usuarios
+
+note bottom of UC_Pago
+  El resultado del pago simulado depende del email:
+  @acceptme.com aprueba, @rejectme.com rechaza.
+  Pago aprobado con la reserva vencida → reembolso automático.
+end note
+@enduml
