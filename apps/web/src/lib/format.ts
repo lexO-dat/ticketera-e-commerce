@@ -13,7 +13,14 @@ export function plainNumber(value: number | null | undefined): string {
   return new Intl.NumberFormat("es-CL").format(value ?? 0);
 }
 
+/**
+ * Hora de Chile siempre, también en el render del servidor (el contenedor corre en UTC): si no,
+ * un show a las 21:00 se mostraría como 00:00 del día siguiente.
+ */
+export const TIME_ZONE = "America/Santiago";
+
 const DATE_LONG = new Intl.DateTimeFormat("es-CL", {
+  timeZone: TIME_ZONE,
   weekday: "short",
   day: "2-digit",
   month: "long",
@@ -21,12 +28,19 @@ const DATE_LONG = new Intl.DateTimeFormat("es-CL", {
 });
 
 const DATE_SHORT = new Intl.DateTimeFormat("es-CL", {
+  timeZone: TIME_ZONE,
   day: "2-digit",
   month: "short",
   year: "numeric",
 });
 
-const TIME = new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit" });
+// Reloj de 24 h ("21:00 hrs"), no "09:00 p. m. hrs".
+const TIME = new Intl.DateTimeFormat("es-CL", {
+  timeZone: TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 export function longDate(iso: string): string {
   return DATE_LONG.format(new Date(iso));

@@ -1,6 +1,7 @@
 import { Caption, DisplayHeading, MetaText, SectionTitle } from "@/components/kit/Text";
 
 export type { QueueView } from "@/lib/queue.functions";
+import { dateAndTime } from "@/lib/format";
 import type { QueueView } from "@/lib/queue.functions";
 
 function eta(seconds: number) {
@@ -46,7 +47,7 @@ export function QueuePanel({ view, eventTitle }: { view: QueueView; eventTitle: 
             {view.state === "prequeue" ? (
               <span className="text-subheading">
                 Al abrir la venta se sortea el orden entre quienes ya están esperando
-                {view.opensAt ? ` (${new Date(view.opensAt).toLocaleString("es-CL")})` : ""}.
+                {view.opensAt ? ` (${dateAndTime(view.opensAt)})` : ""}.
               </span>
             ) : (
               <div className="flex flex-wrap items-baseline justify-between gap-4">
