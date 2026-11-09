@@ -8,13 +8,19 @@ Proyecto de Arquitectura de Software (UDP, Sección 2).
 
 ## Puesta en marcha
 
-Requisitos: Node 22.18+, Docker con Compose.
+Requisitos: Docker con Compose. Todo el sistema (web, servicios, bases de datos, broker, correo y
+borde TLS) se levanta con un solo comando y queda en **https://localhost:8443**:
+
+```bash
+docker compose -f infra/docker-compose.yml up -d --build --wait   # o: npm run infra:up
+```
+
+Para desarrollar la web con recarga en caliente (Node 22.18+), con el stack anterior arriba:
 
 ```bash
 npm install
-npm run infra:up      # infraestructura + todos los servicios (2 réplicas c/u) + gateway
 cp apps/web/.env.example apps/web/.env  # la web habla con el gateway en GATEWAY_URL
-npm run dev           # web (TanStack Start) en http://localhost:8080 · vía Nginx: https://localhost:8443
+npm run dev           # http://localhost:8080 (el contenedor `web` sigue sirviendo :8443)
 ```
 
 Administrador de desarrollo: `admin@ticketera.local` / `admin-dev-password-123`. Los correos
@@ -33,7 +39,7 @@ por `https://localhost:8443`.
 | Redis primario / réplica      | `127.0.0.1:6379` / `:6380`; 3 Sentinel internos                             | contraseña `redis-dev-password`                                                                                 |
 | RabbitMQ (AMQP / consola)     | `127.0.0.1:5672` / http://localhost:15672                                   | `ticketera` / `rabbitmq-dev-password`                                                                           |
 | Mailpit (SMTP / bandeja)      | `127.0.0.1:1025` / http://localhost:8025                                    | —                                                                                                               |
-| Nginx (borde TLS 1.3)         | https://localhost:8443 (`/api/*` → gateway)                                 | certificado autofirmado                                                                                         |
+| Nginx (borde TLS 1.3)         | https://localhost:8443 (`/` → web ×2, `/api/*` → gateway, `/scanner/`)      | certificado autofirmado                                                                                         |
 | API Gateway (2 réplicas)      | http://127.0.0.1:3000 y :3001                                               | —                                                                                                               |
 | webpay-mock (formulario)      | http://127.0.0.1:3005 · `/webpay/form` vía Nginx                            | API: `597055555532` / `webpay-mock-dev-secret-0123456789`                                                       |
 
