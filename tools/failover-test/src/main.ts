@@ -49,6 +49,7 @@ const SCENARIOS: Record<string, { container: string; description: string }> = {
   },
   "service:orders": { container: `${PROJECT}-orders-1`, description: "una réplica de orders" },
   gateway: { container: `${PROJECT}-gateway-1`, description: "una réplica del gateway" },
+  web: { container: `${PROJECT}-web-1`, description: "una réplica de la web (SSR)" },
   redis: { container: "<redis:primary>", description: "Redis primario" },
   // Tras un failover los roles se invierten: se resuelve en el momento cuál nodo es cuál.
   postgres: { container: "<pg:primary>", description: "PostgreSQL primaria" },
@@ -260,6 +261,13 @@ async function runScenario(key: string, cartUser: Session, sessionUser: Session)
 
   const ok = (status: number) => (status >= 200 && status < 300 ? true : status);
   const probes = [
+    probe("web: página de la tienda (SSR)", 250, async () => {
+      // La raíz del borde (sin /api): Nginx → contenedores web → gateway.
+      const page = await fetch(new URL("/tienda", EDGE), { signal: AbortSignal.timeout(8000) })
+        .then((response) => response.status)
+        .catch(() => 0);
+      return ok(page);
+    }),
     probe("catálogo (lectura pública)", 250, async () =>
       ok((await call("GET", "/catalog/events")).status),
     ),

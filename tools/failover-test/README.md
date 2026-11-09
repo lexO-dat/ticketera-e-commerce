@@ -20,14 +20,15 @@ npm run test:failover -- --scenario all                 # todos, en orden
 npm run test:failover -- --scenario postgres,redis      # algunos
 ```
 
-| Escenario          | Se bota                 | Quién toma el relevo                                                 |
-| ------------------ | ----------------------- | -------------------------------------------------------------------- |
-| `service:catalog`  | una réplica de catalog  | la otra réplica (DNS de Docker + reintento de conexión)              |
-| `service:identity` | una réplica de identity | ídem                                                                 |
-| `service:orders`   | una réplica de orders   | ídem                                                                 |
-| `gateway`          | una réplica del gateway | Nginx reintenta la conexión en la otra                               |
-| `redis`            | Redis primario          | Sentinel promueve la réplica; ioredis se reconecta al nuevo primario |
-| `postgres`         | PostgreSQL primaria     | `pg-failover` promueve la réplica; el pool de commons la encuentra   |
+| Escenario          | Se bota                 | Quién toma el relevo                                                     |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------ |
+| `service:catalog`  | una réplica de catalog  | la otra réplica (DNS de Docker + reintento de conexión)                  |
+| `service:identity` | una réplica de identity | ídem                                                                     |
+| `service:orders`   | una réplica de orders   | ídem                                                                     |
+| `web`              | una réplica de la web   | Nginx reintenta la conexión en la otra (sonda: página `/tienda` por SSR) |
+| `gateway`          | una réplica del gateway | Nginx reintenta la conexión en la otra                                   |
+| `redis`            | Redis primario          | Sentinel promueve la réplica; ioredis se reconecta al nuevo primario     |
+| `postgres`         | PostgreSQL primaria     | `pg-failover` promueve la réplica; el pool de commons la encuentra       |
 
 ## Resultados de referencia (portátil, todo en Docker)
 
@@ -38,6 +39,7 @@ Ventana = desde el inicio de la primera solicitud fallida o lenta (> 1 s) hasta 
 | -------------------------------------- | ------------ | ------------------------------------------------------------- |
 | Réplica de catalog / identity / orders | 0 s          | 0                                                             |
 | Réplica del gateway                    | ≤ 3,3 s      | 0 (Nginx espera 1 s la conexión y reintenta en la otra)       |
+| Réplica de la web                      | ≤ 2,0 s      | 0 (Nginx reintenta en la otra réplica)                        |
 | Redis primario                         | ≤ 2,6 s      | 1 lectura del carro (500); el carro se conserva               |
 | PostgreSQL primaria                    | ≤ 1,5 s      | 0–1 (el monitor confirma con la réplica y promueve en ~0,3 s) |
 | Réplica de PostgreSQL                  | ≤ 3,1 s      | 0 (las escrituras esperan hasta que se pasa a asíncrona)      |
