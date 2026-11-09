@@ -23,7 +23,24 @@ export type MyTicket = {
   qrImage: string | null;
 };
 
-type ApiTicket = Omit<MyTicket, "qrImage"> & { qr?: string };
+export type ApiTicket = Omit<MyTicket, "qrImage"> & { qr?: string; eventId?: string };
+
+/** Convierte el token firmado del QR en una imagen SVG (en el servidor; el cliente no lo genera). */
+export async function withQrImages(
+  items: ApiTicket[],
+): Promise<(MyTicket & { eventId?: string })[]> {
+  const QRCode = (await import("qrcode")).default;
+  return Promise.all(
+    items.map(async ({ qr, ...ticket }) => ({
+      ...ticket,
+      qrImage: qr
+        ? `data:image/svg+xml;base64,${Buffer.from(
+            await QRCode.toString(qr, { type: "svg", errorCorrectionLevel: "M", margin: 1 }),
+          ).toString("base64")}`
+        : null,
+    })),
+  );
+}
 
 export const myTickets = createServerFn({ method: "GET" })
   .middleware([requireAuth])
@@ -39,19 +56,9 @@ export const myTickets = createServerFn({ method: "GET" })
   )
   .handler(async ({ data, context }): Promise<MyTicket[]> => {
     const { gatewayFetch } = await import("./auth/gateway.server");
-    const QRCode = (await import("qrcode")).default;
     const query = data.orderCode ? `?orderCode=${data.orderCode}` : "";
     const { items } = await gatewayFetch<{ items: ApiTicket[] }>(`/tickets/tickets${query}`, {
       accessToken: context.accessToken,
     });
-    return Promise.all(
-      items.map(async ({ qr, ...ticket }) => ({
-        ...ticket,
-        qrImage: qr
-          ? `data:image/svg+xml;base64,${Buffer.from(
-              await QRCode.toString(qr, { type: "svg", errorCorrectionLevel: "M", margin: 1 }),
-            ).toString("base64")}`
-          : null,
-      })),
-    );
+    return withQrImages(items);
   });

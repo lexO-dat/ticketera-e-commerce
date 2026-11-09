@@ -9,8 +9,9 @@ import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/com
 import { PillButton, PillLink } from "@/components/kit/PillButton";
 import { ORDER_STATUS_LABELS } from "@/lib/account.functions";
 import { getOrder, payOrder, type ApiOrder } from "@/lib/orders.functions";
-import { myTickets, type MyTicket } from "@/lib/tickets.functions";
-import { dateAndTime, money } from "@/lib/format";
+import { TicketCard } from "@/components/site/TicketCard";
+import { myTickets } from "@/lib/tickets.functions";
+import { clock, dateAndTime, money } from "@/lib/format";
 
 /** `?pago=` lo agrega payments al volver del adquirente; el estado real se lee de la orden. */
 const searchSchema = z.object({
@@ -128,7 +129,7 @@ function OrderPage() {
           <div className="mt-6 grid gap-3">
             <MetaText>
               {pendingWithoutAttempt
-                ? `Tus entradas están reservadas hasta las ${new Date(data.expiresAt).toLocaleTimeString("es-CL")}.`
+                ? `Tus entradas están reservadas hasta las ${clock(data.expiresAt)}.`
                 : "Estamos esperando la confirmación del pago. Esta página se actualiza sola."}
             </MetaText>
             {pendingWithoutAttempt ? (
@@ -199,12 +200,6 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-const TICKET_STATUS: Record<MyTicket["status"], string> = {
-  ISSUED: "Válida",
-  CHECKED_IN: "Usada",
-  VOIDED: "Anulada",
-};
-
 /** Entradas con QR (se emiten unos segundos después de confirmarse el pago). */
 function OrderTickets({ code }: { code: string }) {
   const { data } = useQuery({
@@ -221,25 +216,7 @@ function OrderTickets({ code }: { code: string }) {
       <MetaText>Presenta el QR en el acceso. Cada entrada sirve para un ingreso.</MetaText>
       <div className="grid gap-6 sm:grid-cols-2">
         {data.map((ticket) => (
-          <article key={ticket.id} className="grid gap-3 rounded-card bg-plaster p-5">
-            {ticket.qrImage ? (
-              <img
-                src={ticket.qrImage}
-                alt={`Código QR de la entrada ${ticket.code}`}
-                className="aspect-square w-full max-w-[220px] bg-white"
-              />
-            ) : null}
-            <span className="text-body">{ticket.name}</span>
-            <MetaText>
-              {ticket.startsAt ? `${dateAndTime(ticket.startsAt)} · ` : ""}
-              {ticket.venueName ?? ""}
-            </MetaText>
-            {ticket.seatLabel ? <MetaText>{ticket.seatLabel}</MetaText> : null}
-            <MetaText>
-              <span className="font-roboto tracking-[0.08em]">{ticket.code}</span> ·{" "}
-              {TICKET_STATUS[ticket.status]}
-            </MetaText>
-          </article>
+          <TicketCard key={ticket.id} ticket={ticket} />
         ))}
       </div>
     </section>

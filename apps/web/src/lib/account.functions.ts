@@ -1,31 +1,25 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { requireAuth } from "@/lib/auth/middleware";
+import type { ApiEventSummary } from "@/lib/catalog.server";
 import type { ApiOrder } from "@/lib/orders.functions";
+import type { ApiTicket, MyTicket } from "@/lib/tickets.functions";
 
-export type MyOrderTicket = { id: string; ticketCode: string; orderItemId: string };
+/** Entrada vigente en la cuenta: datos del acceso, QR y portada del evento. */
+export type AccountTicket = MyTicket & { eventSlug: string | null; imageUrl: string | null };
 
-export type MyOrder = {
-  id: string;
+/** Compra pagada (o reembolsada): el historial no muestra pagos rechazados ni pendientes. */
+export type Purchase = {
   orderCode: string;
   status: ApiOrder["status"];
   total: number;
   createdAt: string;
-  items: {
-    id: string;
-    quantity: number;
-    unitPrice: number;
-    unitFee: number;
-    eventTitle: string;
-    eventSlug: string;
-    imageUrl: string | null;
-    startsAt: string;
-    venue: string;
-    ticketName: string;
-    seatLabel: string | null;
-    tickets: MyOrderTicket[];
-  }[];
+  lines: { id: string; kind: string; name: string; quantity: number }[];
 };
+
+export type MyAccount = { tickets: AccountTicket[]; purchases: Purchase[] };
+
+const PAID_STATUSES: ApiOrder["status"][] = ["CONFIRMED", "REFUND_PENDING", "REFUNDED"];
 
 export const ORDER_STATUS_LABELS: Record<ApiOrder["status"], string> = {
   PENDING_PAYMENT: "Pendiente de pago",
@@ -35,46 +29,44 @@ export const ORDER_STATUS_LABELS: Record<ApiOrder["status"], string> = {
   REFUNDED: "Reembolsada",
 };
 
-/** Órdenes del usuario autenticado, desde `orders` (la propiedad la valida el servicio). */
-export const myOrders = createServerFn({ method: "GET" })
+/**
+ * Cuenta del comprador: sus entradas vigentes (las anuladas por reembolso no se muestran) con el QR
+ * y la portada del evento, y el historial de compras pagadas. La propiedad la validan los servicios.
+ */
+export const myAccount = createServerFn({ method: "GET" })
   .middleware([requireAuth])
-  .handler(async ({ context }): Promise<MyOrder[]> => {
+  .handler(async ({ context }): Promise<MyAccount> => {
     const { gatewayFetch } = await import("./auth/gateway.server");
-    const [{ items }, tickets] = await Promise.all([
-      gatewayFetch<{ items: ApiOrder[] }>("/orders/orders", { accessToken: context.accessToken }),
-      // Entradas emitidas por `tickets` (si no responde, la cuenta igual muestra las órdenes).
-      gatewayFetch<{
-        items: { id: string; code: string; orderCode: string; name: string; status: string }[];
-      }>("/tickets/tickets", { accessToken: context.accessToken }).catch(() => ({ items: [] })),
+    const { withQrImages } = await import("./tickets.functions");
+    const auth = { accessToken: context.accessToken };
+    const [orders, tickets, catalog] = await Promise.all([
+      gatewayFetch<{ items: ApiOrder[] }>("/orders/orders", auth),
+      // Si tickets o catalog no responden, la cuenta igual muestra lo que tenga.
+      gatewayFetch<{ items: ApiTicket[] }>("/tickets/tickets", auth).catch(() => ({ items: [] })),
+      gatewayFetch<{ events: ApiEventSummary[] }>("/catalog/events").catch(() => ({ events: [] })),
     ]);
-    return items.map((order) => ({
-      id: order.id,
-      orderCode: order.orderCode,
-      status: order.status,
-      total: Number(order.total),
-      createdAt: order.createdAt,
-      items: order.lines.map((line) => {
-        const attributes = line.attributes;
-        const [eventTitle] = line.name.split(" — ");
-        return {
-          id: line.id,
-          quantity: line.quantity,
-          unitPrice: Number(line.unitPrice),
-          unitFee: Number(line.unitFee),
-          eventTitle: eventTitle ?? line.name,
-          eventSlug: "",
-          imageUrl: null,
-          startsAt:
-            typeof attributes["startsAt"] === "string" ? attributes["startsAt"] : order.createdAt,
-          venue: typeof attributes["venueName"] === "string" ? attributes["venueName"] : "",
-          ticketName:
-            typeof attributes["sectionName"] === "string" ? attributes["sectionName"] : line.name,
-          seatLabel:
-            line.seatIds.length > 0 ? `${line.seatIds.length} butaca(s) numerada(s)` : null,
-          tickets: tickets.items
-            .filter((ticket) => ticket.orderCode === order.orderCode && ticket.name === line.name)
-            .map((ticket) => ({ id: ticket.id, ticketCode: ticket.code, orderItemId: line.id })),
-        };
-      }),
-    }));
+    const events = new Map(catalog.events.map((event) => [event.id, event]));
+    const valid = await withQrImages(tickets.items.filter((ticket) => ticket.status !== "VOIDED"));
+    return {
+      tickets: valid
+        .map(({ eventId, ...ticket }) => {
+          const event = eventId ? events.get(eventId) : undefined;
+          return { ...ticket, eventSlug: event?.slug ?? null, imageUrl: event?.imageUrl ?? null };
+        })
+        .sort((a, b) => (a.startsAt ?? "").localeCompare(b.startsAt ?? "")),
+      purchases: orders.items
+        .filter((order) => PAID_STATUSES.includes(order.status))
+        .map((order) => ({
+          orderCode: order.orderCode,
+          status: order.status,
+          total: Number(order.total),
+          createdAt: order.createdAt,
+          lines: order.lines.map((line) => ({
+            id: line.id,
+            kind: line.kind,
+            name: line.name,
+            quantity: line.quantity,
+          })),
+        })),
+    };
   });

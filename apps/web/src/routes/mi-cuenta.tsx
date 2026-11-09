@@ -1,14 +1,21 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { PublicLayout } from "@/components/site/PublicLayout";
 import { Caption, DisplayHeading, Hairline, MetaText, SectionTitle } from "@/components/kit/Text";
 import { GhostButton, PillLink } from "@/components/kit/PillButton";
-import { ORDER_STATUS_LABELS, myOrders, type MyOrder } from "@/lib/account.functions";
+import { TicketCard } from "@/components/site/TicketCard";
+import {
+  ORDER_STATUS_LABELS,
+  myAccount,
+  type AccountTicket,
+  type Purchase,
+} from "@/lib/account.functions";
 import { refreshAuth, useAuth } from "@/lib/useAuth";
 import { signOut } from "@/lib/auth.functions";
-import { dateAndTime, money } from "@/lib/format";
+import { longDate, money } from "@/lib/format";
 
 export const Route = createFileRoute("/mi-cuenta")({
   ssr: false,
@@ -44,16 +51,18 @@ function AccountPage() {
     }
   }, [loading, session, navigate]);
 
-  const ordersQuery = useQuery({
-    queryKey: ["my-orders", session?.user.id],
-    queryFn: () => myOrders(),
+  const accountQuery = useQuery({
+    queryKey: ["my-account", session?.user.id],
+    queryFn: () => myAccount(),
     enabled: Boolean(session),
   });
 
-  const orders = ordersQuery.data ?? [];
-  const now = Date.now();
-  const upcoming = orders.filter((o) => o.items.some((i) => new Date(i.startsAt).getTime() >= now));
-  const past = orders.filter((o) => !o.items.some((i) => new Date(i.startsAt).getTime() >= now));
+  const tickets = accountQuery.data?.tickets ?? [];
+  const purchases = accountQuery.data?.purchases ?? [];
+  // Un evento pasa a "pasados" unas horas después de empezar (el show puede seguir en curso).
+  const cutoff = Date.now() - 6 * 3600_000;
+  const upcoming = tickets.filter((t) => !t.startsAt || Date.parse(t.startsAt) >= cutoff);
+  const past = tickets.filter((t) => t.startsAt && Date.parse(t.startsAt) < cutoff);
 
   return (
     <PublicLayout>
@@ -74,28 +83,25 @@ function AccountPage() {
         </div>
         <MetaText className="mt-4">{session?.user.email}</MetaText>
 
-        {loading || ordersQuery.isLoading ? (
+        {loading || accountQuery.isLoading ? (
           <MetaText className="mt-12">Cargando tus tickets…</MetaText>
-        ) : orders.length === 0 ? (
+        ) : tickets.length === 0 && purchases.length === 0 ? (
           <div className="mt-14 grid justify-items-start gap-6">
             <SectionTitle>Todavía no tienes compras</SectionTitle>
-            <MetaText>Cuando compres tickets aparecerán acá con sus códigos digitales.</MetaText>
+            <MetaText>Cuando compres tickets aparecerán acá con sus códigos QR.</MetaText>
             <PillLink to="/eventos" search={{}}>
               Ver cartelera
             </PillLink>
           </div>
         ) : (
           <>
-            <OrderGroup
+            <TicketGroup
               title="Próximos shows"
-              orders={upcoming}
-              empty="No tienes shows próximos."
+              tickets={upcoming}
+              empty="No tienes entradas para próximos shows."
             />
-            <OrderGroup
-              title="Eventos pasados"
-              orders={past}
-              empty="Aún no tienes eventos pasados."
-            />
+            {past.length > 0 ? <TicketGroup title="Eventos pasados" tickets={past} /> : null}
+            <Purchases purchases={purchases} />
           </>
         )}
       </div>
@@ -103,75 +109,108 @@ function AccountPage() {
   );
 }
 
-function OrderGroup({ title, orders, empty }: { title: string; orders: MyOrder[]; empty: string }) {
+/** Entradas agrupadas por función (evento y fecha), con la portada del evento. */
+function TicketGroup({
+  title,
+  tickets,
+  empty,
+}: {
+  title: string;
+  tickets: AccountTicket[];
+  empty?: string;
+}) {
+  const shows = new Map<string, AccountTicket[]>();
+  for (const ticket of tickets) {
+    const key = `${ticket.name.split(" — ")[0]}|${ticket.startsAt ?? ""}`;
+    shows.set(key, [...(shows.get(key) ?? []), ticket]);
+  }
   return (
     <section className="mt-16">
       <SectionTitle>{title}</SectionTitle>
       <Hairline className="mt-6" />
-      {orders.length === 0 ? (
+      {tickets.length === 0 ? (
         <MetaText className="mt-6">{empty}</MetaText>
       ) : (
-        <div className="grid gap-10 pt-8">
-          {orders.map((order) => (
-            <article key={order.id} className="grid gap-5">
-              <div className="flex flex-wrap items-baseline justify-between gap-3">
-                <span className="text-subheading">Orden {order.orderCode}</span>
-                <MetaText className="inline">
-                  {money(order.total)} · {ORDER_STATUS_LABELS[order.status]}
-                </MetaText>
-              </div>
-
-              <div className="grid gap-6">
-                {order.items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="grid gap-4 border-t border-ash pt-6 sm:grid-cols-[160px_1fr]"
-                  >
-                    <div className="aspect-[4/3] overflow-hidden rounded-card bg-plaster">
-                      {item.imageUrl ? (
-                        <img
-                          src={item.imageUrl}
-                          alt={item.eventTitle}
-                          loading="lazy"
-                          className="size-full object-cover"
-                        />
-                      ) : null}
-                    </div>
-                    <div className="grid gap-2">
-                      <span className="text-lead">{item.eventTitle}</span>
-                      <MetaText>
-                        {dateAndTime(item.startsAt)} · {item.venue}
-                      </MetaText>
-                      <MetaText>
-                        {item.ticketName} × {item.quantity}
-                        {item.seatLabel ? ` · ${item.seatLabel}` : ""}
-                      </MetaText>
-                      <div className="mt-1 flex flex-wrap gap-2">
-                        {item.tickets.map((ticket) => (
-                          <span
-                            key={ticket.id}
-                            className="rounded-button bg-plaster px-3 py-1 font-roboto text-micro tracking-[0.1em]"
-                          >
-                            {ticket.ticketCode}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+        <div className="grid gap-12 pt-8">
+          {[...shows.values()].map((group) => {
+            const first = group[0]!;
+            const eventTitle = first.name.split(" — ")[0] ?? first.name;
+            return (
+              <article key={first.id} className="grid gap-6">
+                <div className="grid gap-4 sm:grid-cols-[160px_1fr] sm:items-center">
+                  <div className="aspect-[4/3] overflow-hidden rounded-card bg-plaster">
+                    {first.imageUrl ? (
+                      <img
+                        src={first.imageUrl}
+                        alt={eventTitle}
+                        loading="lazy"
+                        className="size-full object-cover"
+                      />
+                    ) : null}
                   </div>
-                ))}
-              </div>
-
-              <PillLink
-                to="/orden/$code"
-                params={{ code: order.orderCode }}
-                className="justify-self-start"
-              >
-                Ver orden completa
-              </PillLink>
-            </article>
-          ))}
+                  <div className="grid gap-1">
+                    {first.eventSlug ? (
+                      <Link
+                        to="/evento/$slug"
+                        params={{ slug: first.eventSlug }}
+                        className="text-lead hover:opacity-60"
+                      >
+                        {eventTitle}
+                      </Link>
+                    ) : (
+                      <span className="text-lead">{eventTitle}</span>
+                    )}
+                    <MetaText>
+                      {first.startsAt ? longDate(first.startsAt) : ""}
+                      {first.venueName ? ` · ${first.venueName}` : ""}
+                    </MetaText>
+                    <MetaText>
+                      {group.length} {group.length === 1 ? "entrada" : "entradas"}
+                    </MetaText>
+                  </div>
+                </div>
+                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                  {group.map((ticket) => (
+                    <TicketCard key={ticket.id} ticket={ticket} collapsible />
+                  ))}
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
+    </section>
+  );
+}
+
+/** Historial de compras pagadas (entradas y productos), con enlace al detalle de cada orden. */
+function Purchases({ purchases }: { purchases: Purchase[] }) {
+  if (purchases.length === 0) return null;
+  return (
+    <section className="mt-16">
+      <SectionTitle>Mis compras</SectionTitle>
+      <Hairline className="mt-6" />
+      <div className="grid">
+        {purchases.map((purchase) => (
+          <Link
+            key={purchase.orderCode}
+            to="/orden/$code"
+            params={{ code: purchase.orderCode }}
+            className="grid gap-1 border-b border-ash py-5 hover:opacity-70"
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <span className="text-body">Orden {purchase.orderCode}</span>
+              <MetaText className="inline">
+                {money(purchase.total)} · {ORDER_STATUS_LABELS[purchase.status]}
+              </MetaText>
+            </div>
+            <MetaText>
+              {longDate(purchase.createdAt)} ·{" "}
+              {purchase.lines.map((line) => `${line.quantity} × ${line.name}`).join(" · ")}
+            </MetaText>
+          </Link>
+        ))}
+      </div>
     </section>
   );
 }
